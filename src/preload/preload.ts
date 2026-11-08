@@ -1,7 +1,18 @@
-import { contextBridge } from 'electron'
-import type { ApiElectron } from '../compartido/tipos'
+import { contextBridge, ipcRenderer } from 'electron'
+import type { ApiElectron, CrearProyectoDatos, ProyectoDTO } from '../compartido/tipos'
 
-const api: ApiElectron = {}
+const api: ApiElectron = {
+  proyectos: {
+    listar: (): Promise<ProyectoDTO[]> => ipcRenderer.invoke('proyecto:listar'),
+    crear: (datos: CrearProyectoDatos): Promise<ProyectoDTO> =>
+      ipcRenderer.invoke('proyecto:crear', datos),
+    eliminar: (id: number): Promise<void> => ipcRenderer.invoke('proyecto:eliminar', id)
+  },
+  dialogos: {
+    abrirCarpeta: (rutaInicial?: string): Promise<string | null> =>
+      ipcRenderer.invoke('dialog:abrirCarpeta', rutaInicial)
+  }
+}
 
 if (process.contextIsolated) {
   try {

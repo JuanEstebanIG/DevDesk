@@ -9,17 +9,17 @@ Cada fase depende de que la anterior esté funcional. No saltar de fase sin comp
 - [x] Inicialización de Prisma con SQLite
 - [x] Estructura de carpetas base (`ipc/`, `servicios/`, `repositorios/`, `tipos/`, `paginas/`, `componentes/`, `store/`, `hooks/`, `compartido/`)
 
-## Fase 1 — Modelo de datos y CRUD de Proyecto (días 1-3)
+## Fase 1 — Modelo de datos y CRUD de Proyecto (días 1-3) (completada)
 
-- [ ] Definir `schema.prisma`: modelos `Proyecto`, `Servicio` y `Comando`. Servicio tiene: nombre, path, tipoHealthCheck, objetivoHealthCheck, ordenArranque, proyectoId. Comando tiene: servicioId, etiqueta, comando, origen, esPrincipal
-- [ ] Ejecutar migración inicial de Prisma (`npx prisma migrate dev`)
-- [ ] Repositorio `proyectos.repositorio.ts`: crear, listar, obtener por id, eliminar
-- [ ] Servicio `proyectos.servicio.ts`: casos de uso sobre proyectos (validaciones básicas, ej. que el path exista)
-- [ ] Controlador IPC `proyectos.controlador.ts`: canales `proyecto:crear`, `proyecto:listar`, `proyecto:eliminar`
-- [ ] Controlador IPC `dialogos.controlador.ts`: canal `dialog:abrirCarpeta` para selector de carpetas nativo
-- [ ] `preload.ts`: exponer los métodos correspondientes en `window.api`
-- [ ] Renderer: página `ProyectosPagina.tsx` con listado y formulario para agregar un proyecto (selector de carpeta nativo de Electron vía `dialog.showOpenDialog`)
-- [ ] Store de Zustand (`appStore.ts`) con estado de proyectos y acciones para cargarlos/crearlos
+- [x] Definir `schema.prisma`: modelos `Proyecto`, `Servicio` y `Comando`. Servicio tiene: nombre, path, tipoHealthCheck, objetivoHealthCheck, ordenArranque, proyectoId. Comando tiene: servicioId, etiqueta, comando, origen, esPrincipal
+- [x] Ejecutar migración inicial de Prisma (`npx prisma migrate dev`)
+- [x] Repositorio `proyectos.repositorio.ts`: crear, listar, obtener por id, eliminar
+- [x] Servicio `proyectos.servicio.ts`: casos de uso sobre proyectos (validaciones básicas, ej. que el path exista)
+- [x] Controlador IPC `proyectos.controlador.ts`: canales `proyecto:crear`, `proyecto:listar`, `proyecto:eliminar`
+- [x] Controlador IPC `dialogos.controlador.ts`: canal `dialog:abrirCarpeta` para selector de carpetas nativo
+- [x] `preload.ts`: exponer los métodos correspondientes en `window.api`
+- [x] Renderer: página `ProyectosPagina.tsx` con listado y formulario para agregar un proyecto (selector de carpeta nativo de Electron vía `dialog.showOpenDialog`)
+- [x] Store de Zustand (`appStore.ts`) con estado de proyectos y acciones para cargarlos/crearlos
 
 **Check de fin de fase**: el usuario puede agregar un proyecto seleccionando una carpeta real, verlo en la lista, y eliminarlo. Los datos persisten entre reinicios de la app.
 
