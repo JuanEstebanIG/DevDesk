@@ -2,6 +2,30 @@ export type TipoHealthCheck = 'http' | 'tcp' | 'none'
 
 export type OrigenComando = 'detectado' | 'personalizado'
 
+export type EstadoEjecucion = 'detenido' | 'iniciando' | 'listo' | 'error'
+
+export type TipoFlujoLog = 'stdout' | 'stderr' | 'sistema'
+
+export interface EntradaLog {
+  id: string
+  comandoId: number
+  servicioId: number
+  flujo: TipoFlujoLog
+  texto: string
+  marcaTiempo: string
+}
+
+export interface EstadoEjecucionComandoDTO {
+  comandoId: number
+  servicioId: number
+  pid: number | null
+  estado: EstadoEjecucion
+}
+
+export interface EventoLogComando {
+  entrada: EntradaLog
+}
+
 export interface ComandoDTO {
   id: number
   servicioId: number
@@ -35,11 +59,58 @@ export interface CrearProyectoDatos {
   path: string
 }
 
+export interface CrearServicioDatos {
+  proyectoId: number
+  nombre: string
+  path: string
+  tipoHealthCheck?: TipoHealthCheck
+  objetivoHealthCheck?: string | null
+}
+
+export interface ActualizarServicioDatos {
+  nombre?: string
+  path?: string
+  tipoHealthCheck?: TipoHealthCheck
+  objetivoHealthCheck?: string | null
+  ordenArranque?: number
+}
+
+export interface CrearComandoPersonalizadoDatos {
+  servicioId: number
+  etiqueta: string
+  comando: string
+  esPrincipal?: boolean
+}
+
 export interface ApiElectron {
   proyectos: {
     listar: () => Promise<ProyectoDTO[]>
+    obtener: (id: number) => Promise<ProyectoDTO | null>
     crear: (datos: CrearProyectoDatos) => Promise<ProyectoDTO>
     eliminar: (id: number) => Promise<void>
+  }
+  servicios: {
+    listarPorProyecto: (proyectoId: number) => Promise<ServicioDTO[]>
+    obtener: (id: number) => Promise<ServicioDTO | null>
+    crear: (datos: CrearServicioDatos) => Promise<ServicioDTO>
+    actualizar: (id: number, datos: ActualizarServicioDatos) => Promise<ServicioDTO>
+    eliminar: (id: number) => Promise<void>
+    iniciar: (servicioId: number) => Promise<EstadoEjecucionComandoDTO>
+    detener: (servicioId: number) => Promise<EstadoEjecucionComandoDTO>
+    reiniciar: (servicioId: number) => Promise<EstadoEjecucionComandoDTO>
+  }
+  comandos: {
+    crearPersonalizado: (datos: CrearComandoPersonalizadoDatos) => Promise<ComandoDTO>
+    establecerPrincipal: (servicioId: number, comandoId: number) => Promise<ComandoDTO[]>
+    eliminar: (comandoId: number) => Promise<void>
+    ejecutar: (comandoId: number) => Promise<EstadoEjecucionComandoDTO>
+    detener: (comandoId: number) => Promise<EstadoEjecucionComandoDTO>
+    reiniciar: (comandoId: number) => Promise<EstadoEjecucionComandoDTO>
+    obtenerEstados: () => Promise<EstadoEjecucionComandoDTO[]>
+    obtenerLogs: (comandoId: number) => Promise<EntradaLog[]>
+    limpiarLogs: (comandoId: number) => Promise<void>
+    onLog: (callback: (entrada: EntradaLog) => void) => () => void
+    onEstado: (callback: (estado: EstadoEjecucionComandoDTO) => void) => () => void
   }
   dialogos: {
     abrirCarpeta: (rutaInicial?: string) => Promise<string | null>
