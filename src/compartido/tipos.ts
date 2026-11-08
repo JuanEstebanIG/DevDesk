@@ -108,6 +108,7 @@ export interface ApiElectron {
     obtener: (id: number) => Promise<ServicioDTO | null>
     crear: (datos: CrearServicioDatos) => Promise<ServicioDTO>
     actualizar: (id: number, datos: ActualizarServicioDatos) => Promise<ServicioDTO>
+    reordenar: (proyectoId: number, idsServiciosEnOrden: number[]) => Promise<ServicioDTO[]>
     eliminar: (id: number) => Promise<void>
     iniciar: (servicioId: number) => Promise<EstadoEjecucionComandoDTO>
     detener: (servicioId: number) => Promise<EstadoEjecucionComandoDTO>

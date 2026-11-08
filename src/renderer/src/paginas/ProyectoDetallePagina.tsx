@@ -62,6 +62,7 @@ export function ProyectoDetallePagina(): React.JSX.Element {
     cargarProyectos,
     crearServicio,
     actualizarServicio,
+    reordenarServicios,
     eliminarServicio,
     iniciarServicio,
     detenerServicio,
@@ -75,7 +76,7 @@ export function ProyectoDetallePagina(): React.JSX.Element {
   const [rutaServicio, setRutaServicio] = useState('')
   const [tipoHealthNuevo, setTipoHealthNuevo] = useState<TipoHealthCheck>('none')
   const [objetivoHealthNuevo, setObjetivoHealthNuevo] = useState('')
-  const [ordenNuevo, setOrdenNuevo] = useState<string>('')
+  const [ordenNuevo, setOrdenNuevo] = useState<number>(1)
   const [guardando, setGuardando] = useState(false)
 
   const [confirmandoEliminarId, setConfirmandoEliminarId] = useState<number | null>(null)
@@ -87,18 +88,20 @@ export function ProyectoDetallePagina(): React.JSX.Element {
   const [objetivoHealthEdicion, setObjetivoHealthEdicion] = useState<string>('')
   const [guardandoEdicion, setGuardandoEdicion] = useState(false)
 
+  const [arrastrandoId, setArrastrandoId] = useState<number | null>(null)
+  const [sobreDestinoId, setSobreDestinoId] = useState<number | null>(null)
+
   useEffect(() => {
-    if (proyectos.length === 0) {
-      cargarProyectos()
-    }
-  }, [proyectos.length, cargarProyectos])
+    cargarProyectos()
+  }, [cargarProyectos])
 
   const proyecto = proyectos.find((p) => p.id === idNumerico)
   const servicios = proyecto?.servicios ?? []
-  const siguienteOrdenPorDefecto =
-    servicios.length > 0
-      ? Math.max(...servicios.map((s) => s.ordenArranque)) + 1
-      : 1
+  const totalOpcionesNuevoOrden = servicios.length + 1
+
+  useEffect(() => {
+    setOrdenNuevo(servicios.length + 1)
+  }, [servicios.length])
 
   const manejarSeleccionarCarpeta = async (): Promise<void> => {
     if (!proyecto) return
@@ -123,26 +126,60 @@ export function ProyectoDetallePagina(): React.JSX.Element {
 
     setGuardando(true)
     try {
-      const ordenFinal = ordenNuevo.trim() ? Number(ordenNuevo) : siguienteOrdenPorDefecto
       const creado = await crearServicio({
         proyectoId: proyecto.id,
         nombre: nombreServicio.trim(),
         path: rutaServicio.trim(),
         tipoHealthCheck: tipoHealthNuevo,
         objetivoHealthCheck: tipoHealthNuevo === 'none' ? null : objetivoHealthNuevo.trim(),
-        ordenArranque: ordenFinal
+        ordenArranque: ordenNuevo
       })
       setNombreServicio('')
       setRutaServicio('')
       setTipoHealthNuevo('none')
       setObjetivoHealthNuevo('')
-      setOrdenNuevo('')
       navegar(`/proyectos/${proyecto.id}/servicios/${creado.id}`)
     } catch {
       // El store expone el error
     } finally {
       setGuardando(false)
     }
+  }
+
+  const manejarCambioOrdenRapido = async (
+    servicioId: number,
+    nuevoOrden: number
+  ): Promise<void> => {
+    if (!proyecto) return
+    await actualizarServicio(proyecto.id, servicioId, {
+      ordenArranque: nuevoOrden
+    })
+  }
+
+  const manejarSoltarServicio = async (destinoId: number): Promise<void> => {
+    if (!proyecto || arrastrandoId === null || arrastrandoId === destinoId) {
+      setArrastrandoId(null)
+      setSobreDestinoId(null)
+      return
+    }
+
+    const idsActuales = servicios.map((s) => s.id)
+    const indiceOrigen = idsActuales.indexOf(arrastrandoId)
+    const indiceDestino = idsActuales.indexOf(destinoId)
+
+    if (indiceOrigen === -1 || indiceDestino === -1) {
+      setArrastrandoId(null)
+      setSobreDestinoId(null)
+      return
+    }
+
+    const nuevaSecuencia = [...idsActuales]
+    const [movido] = nuevaSecuencia.splice(indiceOrigen, 1)
+    nuevaSecuencia.splice(indiceDestino, 0, movido)
+
+    setArrastrandoId(null)
+    setSobreDestinoId(null)
+    await reordenarServicios(proyecto.id, nuevaSecuencia)
   }
 
   const abrirEdicionServicio = (servicio: ServicioDTO): void => {
@@ -270,9 +307,9 @@ export function ProyectoDetallePagina(): React.JSX.Element {
             {proyecto.nombre}
           </h1>
           <p className="text-sm text-txt-secondary leading-relaxed">
-            Inicia los servicios individualmente o arranca el grupo completo respetando su orden de
-            arranque y verificando el health check (<code className="font-mono">http</code> /{' '}
-            <code className="font-mono">tcp</code>) de cada uno antes de continuar.
+            Haz clic en cualquier servicio para abrir sus comandos y consola, o arrastra desde el
+            mango <span className="font-mono text-txt">⠿</span> / usa el selector de orden para
+            ajustar la secuencia de arranque del grupo.
           </p>
         </div>
 
@@ -403,36 +440,91 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                 const operando = operandoServicioId === servicio.id
                 const estaActivo = estadoPrincipal === 'listo' || estadoPrincipal === 'iniciando'
                 const editandoEste = editandoServicioId === servicio.id
+                const esArrastrado = arrastrandoId === servicio.id
+                const esDestino = sobreDestinoId === servicio.id && arrastrandoId !== servicio.id
 
                 return (
                   <article
                     key={servicio.id}
-                    className={`bg-surface border border-border border-l-[3px] ${
-                      estadoPrincipal === 'listo'
-                        ? 'border-l-green'
-                        : estadoPrincipal === 'iniciando'
-                          ? 'border-l-yellow'
-                          : estadoPrincipal === 'error'
-                            ? 'border-l-red'
-                            : 'border-l-border hover:border-l-accent'
-                    } p-4 transition-colors duration-150 space-y-3`}
+                    draggable={!editandoEste}
+                    onDragStart={(e) => {
+                      setArrastrandoId(servicio.id)
+                      e.dataTransfer.effectAllowed = 'move'
+                      e.dataTransfer.setData('text/plain', String(servicio.id))
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault()
+                      e.dataTransfer.dropEffect = 'move'
+                      if (sobreDestinoId !== servicio.id) {
+                        setSobreDestinoId(servicio.id)
+                      }
+                    }}
+                    onDragLeave={() => {
+                      if (sobreDestinoId === servicio.id) {
+                        setSobreDestinoId(null)
+                      }
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      manejarSoltarServicio(servicio.id)
+                    }}
+                    onDragEnd={() => {
+                      setArrastrandoId(null)
+                      setSobreDestinoId(null)
+                    }}
+                    onClick={() => navegar(`/proyectos/${proyecto.id}/servicios/${servicio.id}`)}
+                    className={`bg-surface border border-l-[3px] ${
+                      esDestino
+                        ? 'border-accent border-l-accent bg-elevated/50'
+                        : estadoPrincipal === 'listo'
+                          ? 'border-border border-l-green hover:border-txt-muted'
+                          : estadoPrincipal === 'iniciando'
+                            ? 'border-border border-l-yellow hover:border-txt-muted'
+                            : estadoPrincipal === 'error'
+                              ? 'border-border border-l-red hover:border-txt-muted'
+                              : 'border-border border-l-border hover:border-l-accent hover:border-txt-muted'
+                    } ${esArrastrado ? 'opacity-50' : ''} p-4 transition-colors duration-150 space-y-3 cursor-pointer`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                       <div className="space-y-1.5 min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span
-                            title="Orden de arranque en el grupo"
-                            className="font-mono text-xs bg-elevated border border-border px-2 py-0.5 text-accent font-semibold"
+                          {/* Mango de arrastre + Dropdown directo de orden */}
+                          <div
+                            className="inline-flex items-center bg-elevated border border-border hover:border-accent transition-colors duration-150"
+                            onClick={(e) => e.stopPropagation()}
                           >
-                            Orden #{servicio.ordenArranque}
-                          </span>
+                            <span
+                              title="Arrastra para reordenar el arranque"
+                              className="px-2 py-0.5 text-txt-muted hover:text-txt cursor-grab active:cursor-grabbing select-none font-mono text-xs border-r border-border"
+                            >
+                              ⠿
+                            </span>
+                            <label htmlFor={`orden-srv-${servicio.id}`} className="sr-only">
+                              Orden de arranque de {servicio.nombre}
+                            </label>
+                            <select
+                              id={`orden-srv-${servicio.id}`}
+                              title="Cambiar posición en la secuencia de arranque"
+                              value={servicio.ordenArranque}
+                              onChange={(e) =>
+                                manejarCambioOrdenRapido(servicio.id, Number(e.target.value))
+                              }
+                              className="bg-elevated text-accent font-mono text-xs font-semibold px-2 py-0.5 focus:outline-none cursor-pointer"
+                            >
+                              {servicios.map((_, idx) => {
+                                const pos = idx + 1
+                                return (
+                                  <option key={pos} value={pos} className="bg-surface text-txt">
+                                    Orden #{pos}
+                                  </option>
+                                )
+                              })}
+                            </select>
+                          </div>
 
-                          <Link
-                            to={`/proyectos/${proyecto.id}/servicios/${servicio.id}`}
-                            className="font-display text-[16px] font-bold text-txt hover:text-accent tracking-tight transition-colors duration-150 truncate cursor-pointer"
-                          >
+                          <span className="font-display text-[16px] font-bold text-txt hover:text-accent tracking-tight transition-colors duration-150 truncate">
                             {servicio.nombre}
-                          </Link>
+                          </span>
 
                           <span className="inline-flex items-center gap-1.5 font-mono text-xs bg-elevated border border-border px-2 py-0.5">
                             <span
@@ -468,7 +560,10 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                      <div
+                        className="flex items-center gap-2 shrink-0 flex-wrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         {comandoPrincipal && (
                           <>
                             {!estaActivo ? (
@@ -514,8 +609,9 @@ export function ProyectoDetallePagina(): React.JSX.Element {
 
                     {editandoEste && (
                       <form
+                        onClick={(e) => e.stopPropagation()}
                         onSubmit={(e) => manejarGuardarEdicion(e, servicio.id)}
-                        className="bg-elevated border border-border p-3.5 space-y-3"
+                        className="bg-elevated border border-border p-3.5 space-y-3 cursor-default"
                       >
                         <div className="text-xs font-medium text-txt">
                           Configurar orden de arranque y verificación de disponibilidad
@@ -523,16 +619,22 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                           <div className="space-y-1">
                             <label className="block text-[11px] font-mono text-txt-secondary">
-                              Orden de arranque
+                              Posición de arranque
                             </label>
-                            <input
-                              type="number"
-                              min={1}
+                            <select
                               value={ordenEdicion}
                               onChange={(e) => setOrdenEdicion(Number(e.target.value))}
-                              className="w-full bg-surface border border-border focus:border-accent focus:outline-none px-2.5 py-1.5 text-xs font-mono text-txt"
-                              required
-                            />
+                              className="w-full bg-surface border border-border focus:border-accent focus:outline-none px-2.5 py-1.5 text-xs font-mono text-txt cursor-pointer"
+                            >
+                              {servicios.map((_, idx) => {
+                                const pos = idx + 1
+                                return (
+                                  <option key={pos} value={pos}>
+                                    Posición #{pos}
+                                  </option>
+                                )
+                              })}
+                            </select>
                           </div>
 
                           <div className="space-y-1">
@@ -544,7 +646,7 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                               onChange={(e) =>
                                 setTipoHealthEdicion(e.target.value as TipoHealthCheck)
                               }
-                              className="w-full bg-surface border border-border focus:border-accent focus:outline-none px-2.5 py-1.5 text-xs font-mono text-txt"
+                              className="w-full bg-surface border border-border focus:border-accent focus:outline-none px-2.5 py-1.5 text-xs font-mono text-txt cursor-pointer"
                             >
                               <option value="none">Ninguno (solo proceso activo)</option>
                               <option value="http">HTTP (URL o puerto)</option>
@@ -605,12 +707,15 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                           </span>
                         ) : (
                           <span className="text-txt-muted">
-                            Sin comandos detectados — entra al detalle para agregar uno manual
+                            Sin comandos detectados — haz clic para agregar uno manual
                           </span>
                         )}
                       </div>
 
-                      <div className="flex items-center justify-end gap-2 shrink-0">
+                      <div
+                        className="flex items-center justify-end gap-2 shrink-0"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <button
                           type="button"
                           onClick={() =>
@@ -724,20 +829,28 @@ export function ProyectoDetallePagina(): React.JSX.Element {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <label
-                    htmlFor="input-orden-servicio"
+                    htmlFor="select-orden-servicio"
                     className="block text-xs font-medium text-txt"
                   >
-                    Orden de arranque
+                    Posición de arranque
                   </label>
-                  <input
-                    id="input-orden-servicio"
-                    type="number"
-                    min={1}
+                  <select
+                    id="select-orden-servicio"
                     value={ordenNuevo}
-                    onChange={(e) => setOrdenNuevo(e.target.value)}
-                    placeholder={String(siguienteOrdenPorDefecto)}
-                    className="w-full bg-elevated border border-border focus:border-accent focus:outline-none px-3 py-2 text-xs font-mono text-txt placeholder:text-txt-muted"
-                  />
+                    onChange={(e) => setOrdenNuevo(Number(e.target.value))}
+                    className="w-full bg-elevated border border-border focus:border-accent focus:outline-none px-2.5 py-2 text-xs font-mono text-txt cursor-pointer"
+                  >
+                    {Array.from({ length: totalOpcionesNuevoOrden }, (_, idx) => {
+                      const pos = idx + 1
+                      return (
+                        <option key={pos} value={pos}>
+                          {pos === totalOpcionesNuevoOrden
+                            ? `Posición #${pos} (al final)`
+                            : `Posición #${pos} (desplaza actuales)`}
+                        </option>
+                      )
+                    })}
+                  </select>
                 </div>
 
                 <div className="space-y-1.5">
@@ -751,7 +864,7 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                     id="select-health-servicio"
                     value={tipoHealthNuevo}
                     onChange={(e) => setTipoHealthNuevo(e.target.value as TipoHealthCheck)}
-                    className="w-full bg-elevated border border-border focus:border-accent focus:outline-none px-2.5 py-2 text-xs font-mono text-txt"
+                    className="w-full bg-elevated border border-border focus:border-accent focus:outline-none px-2.5 py-2 text-xs font-mono text-txt cursor-pointer"
                   >
                     <option value="none">Ninguno</option>
                     <option value="http">HTTP (URL/puerto)</option>
@@ -796,7 +909,7 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                     setRutaServicio('')
                     setTipoHealthNuevo('none')
                     setObjetivoHealthNuevo('')
-                    setOrdenNuevo('')
+                    setOrdenNuevo(totalOpcionesNuevoOrden)
                     limpiarError()
                   }}
                   className="bg-elevated border border-border hover:border-txt-secondary text-txt-secondary hover:text-txt px-3 py-2 text-xs font-medium transition-colors duration-150 cursor-pointer"

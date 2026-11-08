@@ -43,6 +43,7 @@ interface EstadoApp {
     servicioId: number,
     datos: ActualizarServicioDatos
   ) => Promise<ServicioDTO>
+  reordenarServicios: (proyectoId: number, idsServiciosEnOrden: number[]) => Promise<void>
   eliminarServicio: (proyectoId: number, servicioId: number) => Promise<void>
   iniciarServicio: (servicioId: number) => Promise<void>
   detenerServicio: (servicioId: number) => Promise<void>
@@ -161,12 +162,13 @@ export const useAppStore = create<EstadoApp>((set) => ({
     set({ errorProyectos: null })
     try {
       const nuevoServicio = await window.api.servicios.crear(datos)
+      const listaActualizada = await window.api.servicios.listarPorProyecto(datos.proyectoId)
       set((estado) => ({
         proyectos: estado.proyectos.map((proyecto) =>
           proyecto.id === datos.proyectoId
             ? {
                 ...proyecto,
-                servicios: ordenarServicios([...(proyecto.servicios ?? []), nuevoServicio])
+                servicios: ordenarServicios(listaActualizada)
               }
             : proyecto
         )
@@ -187,16 +189,13 @@ export const useAppStore = create<EstadoApp>((set) => ({
     set({ errorProyectos: null })
     try {
       const actualizado = await window.api.servicios.actualizar(servicioId, datos)
+      const listaActualizada = await window.api.servicios.listarPorProyecto(proyectoId)
       set((estado) => ({
         proyectos: estado.proyectos.map((proyecto) =>
           proyecto.id === proyectoId
             ? {
                 ...proyecto,
-                servicios: ordenarServicios(
-                  (proyecto.servicios ?? []).map((srv) =>
-                    srv.id === servicioId ? actualizado : srv
-                  )
-                )
+                servicios: ordenarServicios(listaActualizada)
               }
             : proyecto
         )
@@ -209,16 +208,44 @@ export const useAppStore = create<EstadoApp>((set) => ({
     }
   },
 
-  eliminarServicio: async (proyectoId: number, servicioId: number): Promise<void> => {
+  reordenarServicios: async (
+    proyectoId: number,
+    idsServiciosEnOrden: number[]
+  ): Promise<void> => {
     set({ errorProyectos: null })
     try {
-      await window.api.servicios.eliminar(servicioId)
+      const listaActualizada = await window.api.servicios.reordenar(
+        proyectoId,
+        idsServiciosEnOrden
+      )
       set((estado) => ({
         proyectos: estado.proyectos.map((proyecto) =>
           proyecto.id === proyectoId
             ? {
                 ...proyecto,
-                servicios: (proyecto.servicios ?? []).filter((srv) => srv.id !== servicioId)
+                servicios: ordenarServicios(listaActualizada)
+              }
+            : proyecto
+        )
+      }))
+    } catch (error) {
+      const mensaje = extraerMensajeError(error)
+      set({ errorProyectos: mensaje })
+      throw new Error(mensaje)
+    }
+  },
+
+  eliminarServicio: async (proyectoId: number, servicioId: number): Promise<void> => {
+    set({ errorProyectos: null })
+    try {
+      await window.api.servicios.eliminar(servicioId)
+      const listaActualizada = await window.api.servicios.listarPorProyecto(proyectoId)
+      set((estado) => ({
+        proyectos: estado.proyectos.map((proyecto) =>
+          proyecto.id === proyectoId
+            ? {
+                ...proyecto,
+                servicios: ordenarServicios(listaActualizada)
               }
             : proyecto
         )

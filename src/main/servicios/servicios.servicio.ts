@@ -173,6 +173,19 @@ export async function eliminarServicio(id: number): Promise<void> {
   await serviciosRepositorio.eliminarServicio(id)
 }
 
+export async function reordenarServicios(
+  proyectoId: number,
+  idsServiciosEnOrden: number[]
+): Promise<ServicioDTO[]> {
+  if (!proyectoId || typeof proyectoId !== 'number') {
+    throw new Error('ID de proyecto inválido.')
+  }
+  if (!Array.isArray(idsServiciosEnOrden)) {
+    throw new Error('La secuencia de servicios es inválida.')
+  }
+  return await serviciosRepositorio.reordenarServicios(proyectoId, idsServiciosEnOrden)
+}
+
 async function resolverComandoPrincipal(servicioId: number): Promise<number> {
   const servicio = await serviciosRepositorio.obtenerServicioPorId(servicioId)
   if (!servicio) {
