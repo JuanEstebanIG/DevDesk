@@ -23,10 +23,6 @@ export default defineConfig({
         '@': resolve('src/renderer/src')
       }
     },
-    server: {
-      port: 51730,
-      strictPort: true
-    },
     plugins: [react(), tailwindcss()]
   }
 })
