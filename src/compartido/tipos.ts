@@ -22,6 +22,16 @@ export interface EstadoEjecucionComandoDTO {
   estado: EstadoEjecucion
 }
 
+export interface EstadoArranqueGrupoDTO {
+  proyectoId: number
+  enCurso: boolean
+  servicioActualId: number | null
+  servicioActualNombre: string | null
+  pasoActual: number
+  totalPasos: number
+  errorMensaje: string | null
+}
+
 export interface EventoLogComando {
   entrada: EntradaLog
 }
@@ -65,6 +75,7 @@ export interface CrearServicioDatos {
   path: string
   tipoHealthCheck?: TipoHealthCheck
   objetivoHealthCheck?: string | null
+  ordenArranque?: number
 }
 
 export interface ActualizarServicioDatos {
@@ -88,6 +99,9 @@ export interface ApiElectron {
     obtener: (id: number) => Promise<ProyectoDTO | null>
     crear: (datos: CrearProyectoDatos) => Promise<ProyectoDTO>
     eliminar: (id: number) => Promise<void>
+    iniciarGrupo: (proyectoId: number) => Promise<EstadoArranqueGrupoDTO>
+    detenerGrupo: (proyectoId: number) => Promise<void>
+    onEstadoGrupo: (callback: (estado: EstadoArranqueGrupoDTO) => void) => () => void
   }
   servicios: {
     listarPorProyecto: (proyectoId: number) => Promise<ServicioDTO[]>

@@ -109,7 +109,8 @@ export function App(): React.JSX.Element {
   const {
     sincronizarEstadosComandos,
     registrarEntradaLog,
-    actualizarEstadoComando
+    actualizarEstadoComando,
+    actualizarEstadoGrupo
   } = useAppStore()
 
   useEffect(() => {
@@ -120,12 +121,21 @@ export function App(): React.JSX.Element {
     const desuscribirEstado = window.api.comandos.onEstado((estado) => {
       actualizarEstadoComando(estado)
     })
+    const desuscribirGrupo = window.api.proyectos.onEstadoGrupo((estadoGrupo) => {
+      actualizarEstadoGrupo(estadoGrupo)
+    })
 
     return () => {
       desuscribirLog()
       desuscribirEstado()
+      desuscribirGrupo()
     }
-  }, [sincronizarEstadosComandos, registrarEntradaLog, actualizarEstadoComando])
+  }, [
+    sincronizarEstadosComandos,
+    registrarEntradaLog,
+    actualizarEstadoComando,
+    actualizarEstadoGrupo
+  ])
 
   return (
     <HashRouter>

@@ -45,14 +45,14 @@ Cada fase depende de que la anterior esté funcional. No saltar de fase sin comp
 
 **Check de fin de fase**: el usuario puede iniciar un servicio real (ej. un `npm run dev` de un proyecto de prueba), ver sus logs en vivo, detenerlo limpiamente (sin procesos huérfanos en Windows), y reiniciarlo.
 
-## Fase 3 — Múltiples servicios y health checks (días 7-9)
+## Fase 3 — Múltiples servicios y health checks (días 7-9) (completada)
 
-- [ ] Extender el modelo de `Servicio` para incluir `ordenArranque` dentro de su proyecto (ya existía desde fase 1; ahora se asigna automáticamente al final al crear y es editable)
-- [ ] Implementar health check tipo `http`: polling periódico a una URL/puerto hasta obtener respuesta exitosa (status < 500) o timeout (60s)
-- [ ] Implementar health check tipo `tcp`: intento de conexión al puerto hasta que acepte conexión o timeout (para casos como bases de datos)
-- [ ] Caso de uso "iniciar grupo": iniciar los servicios de un proyecto en el orden definido, ejecutando para cada servicio el Comando marcado como esPrincipal, esperando el health check de cada uno antes de iniciar el siguiente
-- [ ] Manejo de fallos: si un servicio no pasa su health check en un tiempo límite (o su proceso muere), se detiene su proceso, se marca como `error` y se **detiene el arranque del grupo** (los servicios ya iniciados quedan corriendo)
-- [ ] UI: vista de proyecto mostrando todos sus servicios con estado individual (`detenido`/`iniciando`/`listo`/`error`) y botón para iniciar/detener el grupo completo
+- [x] Extender el modelo de `Servicio` para incluir `ordenArranque` dentro de su proyecto (ya existía desde fase 1; ahora se asigna automáticamente al final al crear y es editable)
+- [x] Implementar health check tipo `http`: polling periódico a una URL/puerto hasta obtener respuesta exitosa (status < 500) o timeout (60s)
+- [x] Implementar health check tipo `tcp`: intento de conexión al puerto hasta que acepte conexión o timeout (para casos como bases de datos)
+- [x] Caso de uso "iniciar grupo": iniciar los servicios de un proyecto en el orden definido, ejecutando para cada servicio el Comando marcado como esPrincipal, esperando el health check de cada uno antes de iniciar el siguiente
+- [x] Manejo de fallos: si un servicio no pasa su health check en un tiempo límite (o su proceso muere), se detiene su proceso, se marca como `error` y se **detiene el arranque del grupo** (los servicios ya iniciados quedan corriendo)
+- [x] UI: vista de proyecto mostrando todos sus servicios con estado individual (`detenido`/`iniciando`/`listo`/`error`) y botón para iniciar/detener el grupo completo
 
 **Check de fin de fase**: un proyecto con 2-3 servicios reales (ej. frontend + backend + base de datos) se puede iniciar como grupo, respetando el orden, y cada uno reporta correctamente cuándo está realmente listo.
 

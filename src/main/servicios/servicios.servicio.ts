@@ -4,14 +4,49 @@ import * as serviciosRepositorio from '../repositorios/servicios.repositorio'
 import * as comandosRepositorio from '../repositorios/comandos.repositorio'
 import { detectarComandosEnCarpeta } from './detectorComandos.servicio'
 import { gestorProcesos } from './gestorProcesos.servicio'
+import { extraerHostYPuertoTcp } from './verificadorSalud.servicio'
 import type {
   ActualizarServicioDatos,
   ComandoDTO,
   CrearComandoPersonalizadoDatos,
   CrearServicioDatos,
+  EstadoArranqueGrupoDTO,
   EstadoEjecucionComandoDTO,
-  ServicioDTO
+  ServicioDTO,
+  TipoHealthCheck
 } from '../../compartido/tipos'
+
+const gruposCancelados = new Map<number, boolean>()
+
+function validarConfiguracionHealthCheck(
+  tipo: TipoHealthCheck | string | undefined,
+  objetivo: string | null | undefined
+): { tipoNormalizado: TipoHealthCheck; objetivoNormalizado: string | null } {
+  const tipoFinal: TipoHealthCheck =
+    tipo === 'http' || tipo === 'tcp' ? tipo : 'none'
+
+  if (tipoFinal === 'none') {
+    return { tipoNormalizado: 'none', objetivoNormalizado: null }
+  }
+
+  const objetivoLimpio = objetivo?.trim() ?? ''
+  if (!objetivoLimpio) {
+    throw new Error(
+      `Debes especificar un puerto o URL para el health check de tipo ${tipoFinal.toUpperCase()}.`
+    )
+  }
+
+  if (tipoFinal === 'tcp' && !extraerHostYPuertoTcp(objetivoLimpio)) {
+    throw new Error(
+      'Para un health check TCP ingresa un puerto válido (ej. 5432 o localhost:5432).'
+    )
+  }
+
+  return {
+    tipoNormalizado: tipoFinal,
+    objetivoNormalizado: objetivoLimpio
+  }
+}
 
 export async function listarServiciosPorProyecto(proyectoId: number): Promise<ServicioDTO[]> {
   if (!proyectoId || typeof proyectoId !== 'number') {
@@ -53,15 +88,23 @@ export async function crearServicio(datos: CrearServicioDatos): Promise<Servicio
     throw new Error('La ruta del servicio debe ser un directorio válido.')
   }
 
+  const { tipoNormalizado, objetivoNormalizado } = validarConfiguracionHealthCheck(
+    datos.tipoHealthCheck,
+    datos.objetivoHealthCheck
+  )
+
   const comandosIniciales = detectarComandosEnCarpeta(pathLimpio)
-  const ordenArranque = await serviciosRepositorio.obtenerSiguienteOrdenArranque(datos.proyectoId)
+  const ordenArranque =
+    datos.ordenArranque && datos.ordenArranque > 0
+      ? Math.floor(datos.ordenArranque)
+      : await serviciosRepositorio.obtenerSiguienteOrdenArranque(datos.proyectoId)
 
   return await serviciosRepositorio.crearServicio({
     proyectoId: datos.proyectoId,
     nombre: nombreLimpio,
     path: pathLimpio,
-    tipoHealthCheck: datos.tipoHealthCheck ?? 'none',
-    objetivoHealthCheck: datos.objetivoHealthCheck ?? null,
+    tipoHealthCheck: tipoNormalizado,
+    objetivoHealthCheck: objetivoNormalizado,
     ordenArranque,
     comandosIniciales
   })
@@ -92,6 +135,29 @@ export async function actualizarServicio(
       throw new Error('La nueva ruta del servicio no es un directorio válido.')
     }
     datosLimpios.path = pathLimpio
+  }
+
+  if (datos.tipoHealthCheck !== undefined || datos.objetivoHealthCheck !== undefined) {
+    const tipoEvaluar = datos.tipoHealthCheck ?? servicioActual.tipoHealthCheck
+    const objetivoEvaluar =
+      datos.objetivoHealthCheck !== undefined
+        ? datos.objetivoHealthCheck
+        : servicioActual.objetivoHealthCheck
+
+    const { tipoNormalizado, objetivoNormalizado } = validarConfiguracionHealthCheck(
+      tipoEvaluar,
+      objetivoEvaluar
+    )
+    datosLimpios.tipoHealthCheck = tipoNormalizado
+    datosLimpios.objetivoHealthCheck = objetivoNormalizado
+  }
+
+  if (datos.ordenArranque !== undefined) {
+    const ordenNum = Math.floor(Number(datos.ordenArranque))
+    if (!Number.isFinite(ordenNum) || ordenNum < 1) {
+      throw new Error('El orden de arranque debe ser un número entero mayor o igual a 1.')
+    }
+    datosLimpios.ordenArranque = ordenNum
   }
 
   return await serviciosRepositorio.actualizarServicio(id, datosLimpios)
@@ -144,6 +210,123 @@ export async function reiniciarServicioPrincipal(
 ): Promise<EstadoEjecucionComandoDTO> {
   const comandoId = await resolverComandoPrincipal(servicioId)
   return await gestorProcesos.reiniciarProceso(comandoId)
+}
+
+export async function iniciarGrupoProyecto(
+  proyectoId: number
+): Promise<EstadoArranqueGrupoDTO> {
+  const servicios = await serviciosRepositorio.listarServiciosPorProyecto(proyectoId)
+  if (servicios.length === 0) {
+    throw new Error('Este proyecto no tiene servicios registrados para iniciar.')
+  }
+
+  gruposCancelados.set(proyectoId, false)
+
+  for (let indice = 0; indice < servicios.length; indice++) {
+    if (gruposCancelados.get(proyectoId)) {
+      const estadoCancelado: EstadoArranqueGrupoDTO = {
+        proyectoId,
+        enCurso: false,
+        servicioActualId: null,
+        servicioActualNombre: null,
+        pasoActual: indice,
+        totalPasos: servicios.length,
+        errorMensaje: null
+      }
+      gestorProcesos.emitirEstadoGrupo(estadoCancelado)
+      return estadoCancelado
+    }
+
+    const servicio = servicios[indice]
+    const estadoProgreso: EstadoArranqueGrupoDTO = {
+      proyectoId,
+      enCurso: true,
+      servicioActualId: servicio.id,
+      servicioActualNombre: servicio.nombre,
+      pasoActual: indice + 1,
+      totalPasos: servicios.length,
+      errorMensaje: null
+    }
+    gestorProcesos.emitirEstadoGrupo(estadoProgreso)
+
+    const comandoPrincipal =
+      servicio.comandos.find((cmd) => cmd.esPrincipal) ?? servicio.comandos[0]
+
+    if (!comandoPrincipal) {
+      const estadoFalloSinCmd: EstadoArranqueGrupoDTO = {
+        proyectoId,
+        enCurso: false,
+        servicioActualId: servicio.id,
+        servicioActualNombre: servicio.nombre,
+        pasoActual: indice + 1,
+        totalPasos: servicios.length,
+        errorMensaje: `El arranque del grupo se detuvo porque "${servicio.nombre}" no tiene un comando configurado.`
+      }
+      gestorProcesos.emitirEstadoGrupo(estadoFalloSinCmd)
+      return estadoFalloSinCmd
+    }
+
+    const resultado = await gestorProcesos.iniciarProceso(comandoPrincipal.id)
+
+    if (gruposCancelados.get(proyectoId)) {
+      const estadoCancelado: EstadoArranqueGrupoDTO = {
+        proyectoId,
+        enCurso: false,
+        servicioActualId: null,
+        servicioActualNombre: null,
+        pasoActual: indice + 1,
+        totalPasos: servicios.length,
+        errorMensaje: null
+      }
+      gestorProcesos.emitirEstadoGrupo(estadoCancelado)
+      return estadoCancelado
+    }
+
+    if (resultado.estado !== 'listo') {
+      const estadoFallo: EstadoArranqueGrupoDTO = {
+        proyectoId,
+        enCurso: false,
+        servicioActualId: servicio.id,
+        servicioActualNombre: servicio.nombre,
+        pasoActual: indice + 1,
+        totalPasos: servicios.length,
+        errorMensaje: `El arranque del grupo se detuvo en "${servicio.nombre}" (paso ${indice + 1} de ${servicios.length}) porque el servicio falló o no superó su health check. Los servicios anteriores permanecen activos.`
+      }
+      gestorProcesos.emitirEstadoGrupo(estadoFallo)
+      return estadoFallo
+    }
+  }
+
+  const estadoCompletado: EstadoArranqueGrupoDTO = {
+    proyectoId,
+    enCurso: false,
+    servicioActualId: null,
+    servicioActualNombre: null,
+    pasoActual: servicios.length,
+    totalPasos: servicios.length,
+    errorMensaje: null
+  }
+  gestorProcesos.emitirEstadoGrupo(estadoCompletado)
+  return estadoCompletado
+}
+
+export async function detenerGrupoProyecto(proyectoId: number): Promise<void> {
+  gruposCancelados.set(proyectoId, true)
+  const servicios = await serviciosRepositorio.listarServiciosPorProyecto(proyectoId)
+
+  for (const servicio of servicios) {
+    await gestorProcesos.detenerProcesosDeServicio(servicio.id)
+  }
+
+  gestorProcesos.emitirEstadoGrupo({
+    proyectoId,
+    enCurso: false,
+    servicioActualId: null,
+    servicioActualNombre: null,
+    pasoActual: 0,
+    totalPasos: servicios.length,
+    errorMensaje: null
+  })
 }
 
 export async function crearComandoPersonalizado(

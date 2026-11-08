@@ -3,8 +3,10 @@ import { stripVTControlCharacters } from 'util'
 import { BrowserWindow } from 'electron'
 import fs from 'fs'
 import * as comandosRepositorio from '../repositorios/comandos.repositorio'
+import { esperarDisponibilidadServicio } from './verificadorSalud.servicio'
 import type {
   EntradaLog,
+  EstadoArranqueGrupoDTO,
   EstadoEjecucion,
   EstadoEjecucionComandoDTO,
   TipoFlujoLog
@@ -19,6 +21,7 @@ interface EjecucionActiva {
   estado: EstadoEjecucion
   proceso: ChildProcess
   detenidoManualmente: boolean
+  terminadoPorFalloSalud: boolean
   promesaCierre: Promise<void>
 }
 
@@ -28,7 +31,7 @@ class GestorDeProcesos {
   private logsPorComando = new Map<number, EntradaLog[]>()
   private contadorLogs = 0
 
-  private emitirEventoATodasLasVentanas(canal: string, carga: unknown): void {
+  public emitirEventoATodasLasVentanas(canal: string, carga: unknown): void {
     const ventanas = BrowserWindow.getAllWindows()
     for (const ventana of ventanas) {
       if (!ventana.isDestroyed()) {
@@ -37,7 +40,11 @@ class GestorDeProcesos {
     }
   }
 
-  private registrarLog(
+  public emitirEstadoGrupo(estado: EstadoArranqueGrupoDTO): void {
+    this.emitirEventoATodasLasVentanas('grupo:estado', estado)
+  }
+
+  public registrarLog(
     comandoId: number,
     servicioId: number,
     flujo: TipoFlujoLog,
@@ -45,9 +52,7 @@ class GestorDeProcesos {
   ): void {
     const lineas = texto.replace(/\r\n/g, '\n').split('\n')
     for (const lineaCruda of lineas) {
-      const linea = stripVTControlCharacters(lineaCruda)
-        // Respaldo por si algún proceso emite secuencias CSI sin el carácter ESC inicial
-        .replace(/\[\d+(?:;\d+)*m/g, '')
+      const linea = stripVTControlCharacters(lineaCruda).replace(/\[\d+(?:;\d+)*m/g, '')
       if (linea.trim().length === 0) continue
 
       this.contadorLogs += 1
@@ -116,6 +121,11 @@ class GestorDeProcesos {
     return Promise.resolve()
   }
 
+  public estaComandoActivo(comandoId: number): boolean {
+    const ejecucion = this.ejecuciones.get(comandoId)
+    return Boolean(ejecucion && !ejecucion.detenidoManualmente)
+  }
+
   public async iniciarProceso(comandoId: number): Promise<EstadoEjecucionComandoDTO> {
     const ejecucionExistente = this.ejecuciones.get(comandoId)
     if (
@@ -181,14 +191,15 @@ class GestorDeProcesos {
       comandoId,
       servicioId: servicio.id,
       pid: pidReal,
-      estado: 'listo',
+      estado: 'iniciando',
       proceso,
       detenidoManualmente: false,
+      terminadoPorFalloSalud: false,
       promesaCierre
     }
 
     this.ejecuciones.set(comandoId, nuevaEjecucion)
-    const estadoListo = this.actualizarYEmitirEstado(comandoId, servicio.id, pidReal, 'listo')
+    this.actualizarYEmitirEstado(comandoId, servicio.id, pidReal, 'iniciando')
 
     proceso.stdout?.on('data', (fragmento: Buffer) => {
       this.registrarLog(comandoId, servicio.id, 'stdout', fragmento.toString('utf-8'))
@@ -210,9 +221,12 @@ class GestorDeProcesos {
     proceso.on('close', (codigoSalida: number | null) => {
       const actual = this.ejecuciones.get(comandoId)
       const fueManual = actual?.detenidoManualmente ?? false
+      const fueFalloSalud = actual?.terminadoPorFalloSalud ?? false
       this.ejecuciones.delete(comandoId)
 
-      if (fueManual || codigoSalida === 0) {
+      if (fueFalloSalud) {
+        this.actualizarYEmitirEstado(comandoId, servicio.id, null, 'error')
+      } else if (fueManual || codigoSalida === 0) {
         this.registrarLog(
           comandoId,
           servicio.id,
@@ -235,7 +249,80 @@ class GestorDeProcesos {
       resolverCierre()
     })
 
-    return estadoListo
+    const aplicaHealthCheck =
+      comandoDatos.esPrincipal &&
+      (servicio.tipoHealthCheck === 'http' || servicio.tipoHealthCheck === 'tcp') &&
+      Boolean(servicio.objetivoHealthCheck?.trim())
+
+    if (aplicaHealthCheck) {
+      this.registrarLog(
+        comandoId,
+        servicio.id,
+        'sistema',
+        `Verificando disponibilidad (${servicio.tipoHealthCheck.toUpperCase()} → ${servicio.objetivoHealthCheck})...`
+      )
+    }
+
+    const resultadoSalud = await esperarDisponibilidadServicio({
+      tipo: aplicaHealthCheck ? servicio.tipoHealthCheck : 'none',
+      objetivo: aplicaHealthCheck ? servicio.objetivoHealthCheck : null,
+      sigueProcesoActivo: () => {
+        const actual = this.ejecuciones.get(comandoId)
+        return Boolean(actual && actual.pid === pidReal && !actual.detenidoManualmente)
+      }
+    })
+
+    const ejecucionTrasVerificacion = this.ejecuciones.get(comandoId)
+
+    if (ejecucionTrasVerificacion?.detenidoManualmente) {
+      return this.actualizarYEmitirEstado(comandoId, servicio.id, null, 'detenido')
+    }
+
+    if (!resultadoSalud.exito) {
+      if (resultadoSalud.motivoError) {
+        this.registrarLog(comandoId, servicio.id, 'stderr', resultadoSalud.motivoError)
+      }
+      await this.detenerProcesoPorFalloSalud(comandoId, servicio.id)
+      return this.actualizarYEmitirEstado(comandoId, servicio.id, null, 'error')
+    }
+
+    if (!this.ejecuciones.has(comandoId)) {
+      const estadoFinal = this.estadosHistoricos.get(comandoId)
+      return (
+        estadoFinal ?? this.actualizarYEmitirEstado(comandoId, servicio.id, null, 'detenido')
+      )
+    }
+
+    if (aplicaHealthCheck) {
+      this.registrarLog(
+        comandoId,
+        servicio.id,
+        'sistema',
+        `Health check superado (${servicio.tipoHealthCheck.toUpperCase()} → ${servicio.objetivoHealthCheck}). Servicio listo.`
+      )
+    }
+
+    return this.actualizarYEmitirEstado(comandoId, servicio.id, pidReal, 'listo')
+  }
+
+  private async detenerProcesoPorFalloSalud(
+    comandoId: number,
+    servicioId: number
+  ): Promise<void> {
+    const ejecucion = this.ejecuciones.get(comandoId)
+    if (!ejecucion) {
+      this.actualizarYEmitirEstado(comandoId, servicioId, null, 'error')
+      return
+    }
+
+    ejecucion.terminadoPorFalloSalud = true
+    await this.matarArbolDeProceso(ejecucion.pid)
+    await Promise.race([
+      ejecucion.promesaCierre,
+      new Promise<void>((resolve) => setTimeout(resolve, 3000))
+    ])
+    this.ejecuciones.delete(comandoId)
+    this.actualizarYEmitirEstado(comandoId, servicioId, null, 'error')
   }
 
   public async detenerProceso(comandoId: number): Promise<EstadoEjecucionComandoDTO> {

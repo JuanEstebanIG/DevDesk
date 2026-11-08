@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAppStore } from '../store/appStore'
-import type { EstadoEjecucion, ServicioDTO } from '../../../compartido/tipos'
+import type { EstadoEjecucion, ServicioDTO, TipoHealthCheck } from '../../../compartido/tipos'
 
 function separarRuta(rutaCompleta: string): { directorioPadre: string; carpetaFinal: string } {
   const limpia = rutaCompleta.replace(/[/\\]+$/, '')
@@ -23,19 +23,19 @@ function obtenerEtiquetaEstado(estado: EstadoEjecucion): {
   switch (estado) {
     case 'listo':
       return {
-        texto: 'En ejecución',
+        texto: 'Listo',
         colorPunto: 'bg-green shadow-[0_0_6px_rgba(42,216,130,0.5)]',
         colorTexto: 'text-green'
       }
     case 'iniciando':
       return {
-        texto: 'Iniciando...',
+        texto: 'Iniciando (verificando)',
         colorPunto: 'bg-yellow shadow-[0_0_6px_rgba(245,176,39,0.5)]',
         colorTexto: 'text-yellow'
       }
     case 'error':
       return {
-        texto: 'Con fallo',
+        texto: 'Error',
         colorPunto: 'bg-red shadow-[0_0_6px_rgba(240,68,82,0.5)]',
         colorTexto: 'text-red'
       }
@@ -58,20 +58,34 @@ export function ProyectoDetallePagina(): React.JSX.Element {
     cargandoProyectos,
     errorProyectos,
     estadosComandos,
+    estadosGrupos,
     cargarProyectos,
     crearServicio,
+    actualizarServicio,
     eliminarServicio,
     iniciarServicio,
     detenerServicio,
     reiniciarServicio,
+    iniciarGrupoProyecto,
+    detenerGrupoProyecto,
     limpiarError
   } = useAppStore()
 
   const [nombreServicio, setNombreServicio] = useState('')
   const [rutaServicio, setRutaServicio] = useState('')
+  const [tipoHealthNuevo, setTipoHealthNuevo] = useState<TipoHealthCheck>('none')
+  const [objetivoHealthNuevo, setObjetivoHealthNuevo] = useState('')
+  const [ordenNuevo, setOrdenNuevo] = useState<string>('')
   const [guardando, setGuardando] = useState(false)
+
   const [confirmandoEliminarId, setConfirmandoEliminarId] = useState<number | null>(null)
   const [operandoServicioId, setOperandoServicioId] = useState<number | null>(null)
+
+  const [editandoServicioId, setEditandoServicioId] = useState<number | null>(null)
+  const [ordenEdicion, setOrdenEdicion] = useState<number>(1)
+  const [tipoHealthEdicion, setTipoHealthEdicion] = useState<TipoHealthCheck>('none')
+  const [objetivoHealthEdicion, setObjetivoHealthEdicion] = useState<string>('')
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false)
 
   useEffect(() => {
     if (proyectos.length === 0) {
@@ -80,6 +94,11 @@ export function ProyectoDetallePagina(): React.JSX.Element {
   }, [proyectos.length, cargarProyectos])
 
   const proyecto = proyectos.find((p) => p.id === idNumerico)
+  const servicios = proyecto?.servicios ?? []
+  const siguienteOrdenPorDefecto =
+    servicios.length > 0
+      ? Math.max(...servicios.map((s) => s.ordenArranque)) + 1
+      : 1
 
   const manejarSeleccionarCarpeta = async (): Promise<void> => {
     if (!proyecto) return
@@ -104,18 +123,59 @@ export function ProyectoDetallePagina(): React.JSX.Element {
 
     setGuardando(true)
     try {
+      const ordenFinal = ordenNuevo.trim() ? Number(ordenNuevo) : siguienteOrdenPorDefecto
       const creado = await crearServicio({
         proyectoId: proyecto.id,
         nombre: nombreServicio.trim(),
-        path: rutaServicio.trim()
+        path: rutaServicio.trim(),
+        tipoHealthCheck: tipoHealthNuevo,
+        objetivoHealthCheck: tipoHealthNuevo === 'none' ? null : objetivoHealthNuevo.trim(),
+        ordenArranque: ordenFinal
       })
       setNombreServicio('')
       setRutaServicio('')
+      setTipoHealthNuevo('none')
+      setObjetivoHealthNuevo('')
+      setOrdenNuevo('')
       navegar(`/proyectos/${proyecto.id}/servicios/${creado.id}`)
     } catch {
       // El store expone el error
     } finally {
       setGuardando(false)
+    }
+  }
+
+  const abrirEdicionServicio = (servicio: ServicioDTO): void => {
+    setEditandoServicioId(servicio.id)
+    setOrdenEdicion(servicio.ordenArranque)
+    setTipoHealthEdicion(
+      servicio.tipoHealthCheck === 'http' || servicio.tipoHealthCheck === 'tcp'
+        ? servicio.tipoHealthCheck
+        : 'none'
+    )
+    setObjetivoHealthEdicion(servicio.objetivoHealthCheck ?? '')
+  }
+
+  const manejarGuardarEdicion = async (
+    evento: React.FormEvent,
+    servicioId: number
+  ): Promise<void> => {
+    evento.preventDefault()
+    if (!proyecto) return
+
+    setGuardandoEdicion(true)
+    try {
+      await actualizarServicio(proyecto.id, servicioId, {
+        ordenArranque: ordenEdicion,
+        tipoHealthCheck: tipoHealthEdicion,
+        objetivoHealthCheck:
+          tipoHealthEdicion === 'none' ? null : objetivoHealthEdicion.trim()
+      })
+      setEditandoServicioId(null)
+    } catch {
+      // El store expone el error
+    } finally {
+      setGuardandoEdicion(false)
     }
   }
 
@@ -176,13 +236,27 @@ export function ProyectoDetallePagina(): React.JSX.Element {
     )
   }
 
-  const servicios = proyecto.servicios ?? []
+  const estadoGrupo = estadosGrupos[proyecto.id]
+  const grupoEnCurso = Boolean(estadoGrupo?.enCurso)
+  const serviciosActivosCount = servicios.filter((srv) => {
+    const activos = (srv.comandos ?? []).some((cmd) => {
+      const est = estadosComandos[cmd.id]?.estado
+      return est === 'listo' || est === 'iniciando'
+    })
+    return activos
+  }).length
+  const serviciosListosCount = servicios.filter((srv) => {
+    const cmdPrincipal =
+      (srv.comandos ?? []).find((c) => c.esPrincipal) ?? (srv.comandos ?? [])[0]
+    return cmdPrincipal ? estadosComandos[cmdPrincipal.id]?.estado === 'listo' : false
+  }).length
 
   return (
     <div className="space-y-6">
-      <div className="border-b border-border pb-5 flex flex-col md:flex-row md:items-end justify-between gap-4">
-        <div className="space-y-2 max-w-[70ch]">
-          <div className="flex items-center gap-2 text-xs font-mono text-txt-secondary">
+      {/* Cabecera de proyecto y barra de control de grupo */}
+      <div className="border-b border-border pb-5 flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+        <div className="space-y-2 max-w-[68ch]">
+          <div className="flex items-center gap-2 text-xs font-mono text-txt-secondary flex-wrap">
             <Link
               to="/"
               className="hover:text-accent transition-colors duration-150 cursor-pointer"
@@ -196,11 +270,69 @@ export function ProyectoDetallePagina(): React.JSX.Element {
             {proyecto.nombre}
           </h1>
           <p className="text-sm text-txt-secondary leading-relaxed">
-            Registra cada servicio del proyecto eligiendo su subcarpeta. DevDesk detectará
-            automáticamente todos los scripts de su <code className="font-mono">package.json</code>.
+            Inicia los servicios individualmente o arranca el grupo completo respetando su orden de
+            arranque y verificando el health check (<code className="font-mono">http</code> /{' '}
+            <code className="font-mono">tcp</code>) de cada uno antes de continuar.
           </p>
         </div>
+
+        {servicios.length > 0 && (
+          <div className="bg-surface border border-border p-3 flex flex-wrap items-center gap-3 self-start lg:self-auto">
+            <div className="font-mono text-xs px-1">
+              <span className="text-txt-secondary">Grupo: </span>
+              <span className="text-txt font-medium">
+                {serviciosListosCount}/{servicios.length} listos
+              </span>
+            </div>
+
+            <button
+              type="button"
+              disabled={grupoEnCurso}
+              onClick={() => iniciarGrupoProyecto(proyecto.id)}
+              className="bg-elevated border border-accent text-txt hover:bg-accent/15 disabled:opacity-40 px-3.5 py-1.5 text-xs font-medium transition-colors duration-150 cursor-pointer"
+            >
+              {grupoEnCurso ? 'Iniciando secuencia...' : 'Iniciar grupo en orden'}
+            </button>
+
+            {(serviciosActivosCount > 0 || grupoEnCurso) && (
+              <button
+                type="button"
+                onClick={() => detenerGrupoProyecto(proyecto.id)}
+                className="bg-elevated border border-red/50 text-red hover:bg-red/15 px-3.5 py-1.5 text-xs font-medium transition-colors duration-150 cursor-pointer"
+              >
+                Detener grupo
+              </button>
+            )}
+          </div>
+        )}
       </div>
+
+      {/* Telemetría en vivo del arranque de grupo */}
+      {grupoEnCurso && estadoGrupo && (
+        <div className="bg-surface border border-border border-l-[3px] border-l-yellow px-4 py-3.5 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 text-sm">
+            <span
+              aria-hidden="true"
+              className="inline-block w-2 h-2 bg-yellow shadow-[0_0_6px_rgba(245,176,39,0.5)] shrink-0"
+            />
+            <div className="font-mono text-xs text-txt">
+              <span className="text-yellow font-semibold">
+                Secuencia de arranque ({estadoGrupo.pasoActual}/{estadoGrupo.totalPasos}):
+              </span>{' '}
+              esperando disponibilidad de{' '}
+              <span className="font-bold text-txt">{estadoGrupo.servicioActualNombre}</span> antes
+              de avanzar al siguiente servicio...
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => detenerGrupoProyecto(proyecto.id)}
+            className="text-xs font-mono text-red hover:bg-red/15 border border-red/40 px-2.5 py-1 transition-colors duration-150 cursor-pointer shrink-0"
+          >
+            Abortar secuencia
+          </button>
+        </div>
+      )}
 
       {errorProyectos && (
         <div
@@ -210,7 +342,7 @@ export function ProyectoDetallePagina(): React.JSX.Element {
           <div className="flex items-center gap-3 text-sm text-txt">
             <span aria-hidden="true" className="inline-block w-2 h-2 bg-red shrink-0" />
             <div>
-              <span className="font-medium text-red">Operación interrumpida: </span>
+              <span className="font-medium text-red">Secuencia interrumpida: </span>
               <span className="text-txt-secondary">{errorProyectos}</span>
             </div>
           </div>
@@ -234,9 +366,8 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                   Este proyecto aún no tiene servicios
                 </h2>
                 <p className="text-sm text-txt-secondary">
-                  Agrega un servicio desde el panel derecho seleccionando su carpeta (por ejemplo,
-                  la carpeta del frontend, backend o API). El selector se abrirá directamente en{' '}
-                  <code className="font-mono text-txt">{proyecto.path}</code>.
+                  Agrega un servicio desde el panel derecho seleccionando su carpeta. El selector se
+                  abrirá directamente en <code className="font-mono text-txt">{proyecto.path}</code>.
                 </p>
               </div>
               <div>
@@ -271,21 +402,31 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                 const confirmando = confirmandoEliminarId === servicio.id
                 const operando = operandoServicioId === servicio.id
                 const estaActivo = estadoPrincipal === 'listo' || estadoPrincipal === 'iniciando'
+                const editandoEste = editandoServicioId === servicio.id
 
                 return (
                   <article
                     key={servicio.id}
                     className={`bg-surface border border-border border-l-[3px] ${
-                      estaActivo
+                      estadoPrincipal === 'listo'
                         ? 'border-l-green'
-                        : estadoPrincipal === 'error'
-                          ? 'border-l-red'
-                          : 'border-l-border hover:border-l-accent'
+                        : estadoPrincipal === 'iniciando'
+                          ? 'border-l-yellow'
+                          : estadoPrincipal === 'error'
+                            ? 'border-l-red'
+                            : 'border-l-border hover:border-l-accent'
                     } p-4 transition-colors duration-150 space-y-3`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                       <div className="space-y-1.5 min-w-0 flex-1">
-                        <div className="flex items-center gap-2.5 flex-wrap">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span
+                            title="Orden de arranque en el grupo"
+                            className="font-mono text-xs bg-elevated border border-border px-2 py-0.5 text-accent font-semibold"
+                          >
+                            Orden #{servicio.ordenArranque}
+                          </span>
+
                           <Link
                             to={`/proyectos/${proyecto.id}/servicios/${servicio.id}`}
                             className="font-display text-[16px] font-bold text-txt hover:text-accent tracking-tight transition-colors duration-150 truncate cursor-pointer"
@@ -302,6 +443,13 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                             {pidPrincipal && (
                               <span className="text-txt-muted">· PID {pidPrincipal}</span>
                             )}
+                          </span>
+
+                          <span className="font-mono text-xs bg-elevated border border-border px-2 py-0.5 text-txt-secondary">
+                            {servicio.tipoHealthCheck === 'http' ||
+                            servicio.tipoHealthCheck === 'tcp'
+                              ? `${servicio.tipoHealthCheck.toUpperCase()} → ${servicio.objetivoHealthCheck}`
+                              : 'Health check: ninguno'}
                           </span>
 
                           {comandosCorriendo > 1 && (
@@ -326,7 +474,7 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                             {!estaActivo ? (
                               <button
                                 type="button"
-                                disabled={operando}
+                                disabled={operando || grupoEnCurso}
                                 onClick={() => manejarAccionPrincipal(servicio, 'iniciar')}
                                 className="bg-elevated border border-accent text-txt hover:bg-accent/15 disabled:opacity-40 px-3 py-1.5 text-xs font-medium transition-colors duration-150 cursor-pointer"
                               >
@@ -364,6 +512,87 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                       </div>
                     </div>
 
+                    {editandoEste && (
+                      <form
+                        onSubmit={(e) => manejarGuardarEdicion(e, servicio.id)}
+                        className="bg-elevated border border-border p-3.5 space-y-3"
+                      >
+                        <div className="text-xs font-medium text-txt">
+                          Configurar orden de arranque y verificación de disponibilidad
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          <div className="space-y-1">
+                            <label className="block text-[11px] font-mono text-txt-secondary">
+                              Orden de arranque
+                            </label>
+                            <input
+                              type="number"
+                              min={1}
+                              value={ordenEdicion}
+                              onChange={(e) => setOrdenEdicion(Number(e.target.value))}
+                              className="w-full bg-surface border border-border focus:border-accent focus:outline-none px-2.5 py-1.5 text-xs font-mono text-txt"
+                              required
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="block text-[11px] font-mono text-txt-secondary">
+                              Tipo de health check
+                            </label>
+                            <select
+                              value={tipoHealthEdicion}
+                              onChange={(e) =>
+                                setTipoHealthEdicion(e.target.value as TipoHealthCheck)
+                              }
+                              className="w-full bg-surface border border-border focus:border-accent focus:outline-none px-2.5 py-1.5 text-xs font-mono text-txt"
+                            >
+                              <option value="none">Ninguno (solo proceso activo)</option>
+                              <option value="http">HTTP (URL o puerto)</option>
+                              <option value="tcp">TCP (puerto de base de datos/socket)</option>
+                            </select>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="block text-[11px] font-mono text-txt-secondary">
+                              Objetivo (URL o puerto)
+                            </label>
+                            <input
+                              type="text"
+                              disabled={tipoHealthEdicion === 'none'}
+                              value={objetivoHealthEdicion}
+                              onChange={(e) => setObjetivoHealthEdicion(e.target.value)}
+                              placeholder={
+                                tipoHealthEdicion === 'http'
+                                  ? 'http://localhost:5173 o 5173'
+                                  : tipoHealthEdicion === 'tcp'
+                                    ? '5432 o localhost:5432'
+                                    : 'No requerido'
+                              }
+                              className="w-full bg-surface border border-border focus:border-accent focus:outline-none disabled:opacity-40 px-2.5 py-1.5 text-xs font-mono text-txt placeholder:text-txt-muted"
+                              required={tipoHealthEdicion !== 'none'}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setEditandoServicioId(null)}
+                            className="bg-surface border border-border text-txt-secondary hover:text-txt px-3 py-1 text-xs transition-colors duration-150 cursor-pointer"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={guardandoEdicion}
+                            className="bg-surface border border-accent text-txt hover:bg-accent/15 px-3 py-1 text-xs font-medium transition-colors duration-150 cursor-pointer"
+                          >
+                            {guardandoEdicion ? 'Guardando...' : 'Guardar cambios'}
+                          </button>
+                        </div>
+                      </form>
+                    )}
+
                     <div className="pt-2 border-t border-border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                       <div className="font-mono text-txt-secondary truncate">
                         {comandoPrincipal ? (
@@ -381,7 +610,19 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                         )}
                       </div>
 
-                      <div className="flex items-center justify-end shrink-0">
+                      <div className="flex items-center justify-end gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            editandoEste
+                              ? setEditandoServicioId(null)
+                              : abrirEdicionServicio(servicio)
+                          }
+                          className="text-xs text-txt-secondary hover:text-txt px-2 py-1 transition-colors duration-150 cursor-pointer"
+                        >
+                          {editandoEste ? 'Cerrar ajustes' : 'Orden y health check'}
+                        </button>
+
                         {confirmando ? (
                           <div className="flex items-center gap-2 bg-elevated border border-red/40 px-2.5 py-1">
                             <span className="text-xs text-txt">¿Eliminar servicio?</span>
@@ -478,21 +719,84 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                   className="w-full bg-elevated border border-border focus:border-accent focus:outline-none px-3 py-2 text-sm font-sans text-txt placeholder:text-txt-muted transition-colors duration-150"
                   required
                 />
-                <p className="text-[11px] text-txt-muted">
-                  Al guardar, se detectarán automáticamente todos los scripts de su{' '}
-                  <code className="font-mono">package.json</code> como{' '}
-                  <code className="font-mono">npm run &lt;script&gt;</code>.
-                </p>
               </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="input-orden-servicio"
+                    className="block text-xs font-medium text-txt"
+                  >
+                    Orden de arranque
+                  </label>
+                  <input
+                    id="input-orden-servicio"
+                    type="number"
+                    min={1}
+                    value={ordenNuevo}
+                    onChange={(e) => setOrdenNuevo(e.target.value)}
+                    placeholder={String(siguienteOrdenPorDefecto)}
+                    className="w-full bg-elevated border border-border focus:border-accent focus:outline-none px-3 py-2 text-xs font-mono text-txt placeholder:text-txt-muted"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="select-health-servicio"
+                    className="block text-xs font-medium text-txt"
+                  >
+                    Health check
+                  </label>
+                  <select
+                    id="select-health-servicio"
+                    value={tipoHealthNuevo}
+                    onChange={(e) => setTipoHealthNuevo(e.target.value as TipoHealthCheck)}
+                    className="w-full bg-elevated border border-border focus:border-accent focus:outline-none px-2.5 py-2 text-xs font-mono text-txt"
+                  >
+                    <option value="none">Ninguno</option>
+                    <option value="http">HTTP (URL/puerto)</option>
+                    <option value="tcp">TCP (puerto)</option>
+                  </select>
+                </div>
+              </div>
+
+              {tipoHealthNuevo !== 'none' && (
+                <div className="space-y-1.5">
+                  <label
+                    htmlFor="input-objetivo-health"
+                    className="block text-xs font-medium text-txt"
+                  >
+                    {tipoHealthNuevo === 'http'
+                      ? 'URL o puerto HTTP a verificar'
+                      : 'Puerto o host:puerto TCP'}
+                  </label>
+                  <input
+                    id="input-objetivo-health"
+                    type="text"
+                    value={objetivoHealthNuevo}
+                    onChange={(e) => setObjetivoHealthNuevo(e.target.value)}
+                    placeholder={
+                      tipoHealthNuevo === 'http'
+                        ? 'Ej. http://localhost:5173 o 5173'
+                        : 'Ej. 5432 o localhost:5432'
+                    }
+                    className="w-full bg-elevated border border-border focus:border-accent focus:outline-none px-3 py-2 text-xs font-mono text-txt placeholder:text-txt-muted"
+                    required
+                  />
+                </div>
+              )}
             </div>
 
             <div className="pt-2 flex items-center justify-end gap-2">
-              {(nombreServicio.trim() || rutaServicio.trim()) && (
+              {(nombreServicio.trim() || rutaServicio.trim() || objetivoHealthNuevo.trim()) && (
                 <button
                   type="button"
                   onClick={() => {
                     setNombreServicio('')
                     setRutaServicio('')
+                    setTipoHealthNuevo('none')
+                    setObjetivoHealthNuevo('')
+                    setOrdenNuevo('')
                     limpiarError()
                   }}
                   className="bg-elevated border border-border hover:border-txt-secondary text-txt-secondary hover:text-txt px-3 py-2 text-xs font-medium transition-colors duration-150 cursor-pointer"
