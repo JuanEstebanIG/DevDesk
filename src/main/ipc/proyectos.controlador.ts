@@ -7,6 +7,10 @@ export function registrarControladorProyectos(): void {
     return await proyectosServicio.listarProyectos()
   })
 
+  ipcMain.handle('proyecto:obtener', async (_event, id: number) => {
+    return await proyectosServicio.obtenerProyectoPorId(id)
+  })
+
   ipcMain.handle('proyecto:crear', async (_event, datos: CrearProyectoDatos) => {
     return await proyectosServicio.crearProyecto(datos)
   })

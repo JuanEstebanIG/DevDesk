@@ -1,13 +1,53 @@
 import { create } from 'zustand'
-import type { CrearProyectoDatos, ProyectoDTO } from '../../../compartido/tipos'
+import type {
+  ComandoDTO,
+  CrearComandoPersonalizadoDatos,
+  CrearProyectoDatos,
+  CrearServicioDatos,
+  EntradaLog,
+  EstadoEjecucionComandoDTO,
+  ProyectoDTO,
+  ServicioDTO
+} from '../../../compartido/tipos'
+
+const LIMITE_LOGS_UI = 1500
 
 interface EstadoApp {
   proyectos: ProyectoDTO[]
   cargandoProyectos: boolean
   errorProyectos: string | null
+  estadosComandos: Record<number, EstadoEjecucionComandoDTO>
+  logsPorComando: Record<number, EntradaLog[]>
+
   cargarProyectos: () => Promise<void>
   crearProyecto: (datos: CrearProyectoDatos) => Promise<ProyectoDTO>
   eliminarProyecto: (id: number) => Promise<void>
+
+  crearServicio: (datos: CrearServicioDatos) => Promise<ServicioDTO>
+  eliminarServicio: (proyectoId: number, servicioId: number) => Promise<void>
+  iniciarServicio: (servicioId: number) => Promise<void>
+  detenerServicio: (servicioId: number) => Promise<void>
+  reiniciarServicio: (servicioId: number) => Promise<void>
+
+  crearComandoPersonalizado: (
+    proyectoId: number,
+    datos: CrearComandoPersonalizadoDatos
+  ) => Promise<ComandoDTO>
+  establecerComandoPrincipal: (
+    proyectoId: number,
+    servicioId: number,
+    comandoId: number
+  ) => Promise<void>
+  eliminarComando: (proyectoId: number, servicioId: number, comandoId: number) => Promise<void>
+  ejecutarComando: (comandoId: number) => Promise<void>
+  detenerComando: (comandoId: number) => Promise<void>
+  reiniciarComando: (comandoId: number) => Promise<void>
+
+  sincronizarEstadosComandos: () => Promise<void>
+  cargarLogsDeComando: (comandoId: number) => Promise<void>
+  limpiarLogsDeComando: (comandoId: number) => Promise<void>
+  registrarEntradaLog: (entrada: EntradaLog) => void
+  actualizarEstadoComando: (estado: EstadoEjecucionComandoDTO) => void
   limpiarError: () => void
 }
 
@@ -22,6 +62,8 @@ export const useAppStore = create<EstadoApp>((set) => ({
   proyectos: [],
   cargandoProyectos: false,
   errorProyectos: null,
+  estadosComandos: {},
+  logsPorComando: {},
 
   cargarProyectos: async (): Promise<void> => {
     set({ cargandoProyectos: true, errorProyectos: null })
@@ -63,6 +105,301 @@ export const useAppStore = create<EstadoApp>((set) => ({
       set({ errorProyectos: mensaje })
       throw new Error(mensaje)
     }
+  },
+
+  crearServicio: async (datos: CrearServicioDatos): Promise<ServicioDTO> => {
+    set({ errorProyectos: null })
+    try {
+      const nuevoServicio = await window.api.servicios.crear(datos)
+      set((estado) => ({
+        proyectos: estado.proyectos.map((proyecto) =>
+          proyecto.id === datos.proyectoId
+            ? {
+                ...proyecto,
+                servicios: [...(proyecto.servicios ?? []), nuevoServicio]
+              }
+            : proyecto
+        )
+      }))
+      return nuevoServicio
+    } catch (error) {
+      const mensaje = extraerMensajeError(error)
+      set({ errorProyectos: mensaje })
+      throw new Error(mensaje)
+    }
+  },
+
+  eliminarServicio: async (proyectoId: number, servicioId: number): Promise<void> => {
+    set({ errorProyectos: null })
+    try {
+      await window.api.servicios.eliminar(servicioId)
+      set((estado) => ({
+        proyectos: estado.proyectos.map((proyecto) =>
+          proyecto.id === proyectoId
+            ? {
+                ...proyecto,
+                servicios: (proyecto.servicios ?? []).filter((srv) => srv.id !== servicioId)
+              }
+            : proyecto
+        )
+      }))
+    } catch (error) {
+      const mensaje = extraerMensajeError(error)
+      set({ errorProyectos: mensaje })
+      throw new Error(mensaje)
+    }
+  },
+
+  iniciarServicio: async (servicioId: number): Promise<void> => {
+    set({ errorProyectos: null })
+    try {
+      const estadoEjecucion = await window.api.servicios.iniciar(servicioId)
+      set((estado) => ({
+        estadosComandos: {
+          ...estado.estadosComandos,
+          [estadoEjecucion.comandoId]: estadoEjecucion
+        }
+      }))
+    } catch (error) {
+      const mensaje = extraerMensajeError(error)
+      set({ errorProyectos: mensaje })
+      throw new Error(mensaje)
+    }
+  },
+
+  detenerServicio: async (servicioId: number): Promise<void> => {
+    set({ errorProyectos: null })
+    try {
+      const estadoEjecucion = await window.api.servicios.detener(servicioId)
+      set((estado) => ({
+        estadosComandos: {
+          ...estado.estadosComandos,
+          [estadoEjecucion.comandoId]: estadoEjecucion
+        }
+      }))
+    } catch (error) {
+      const mensaje = extraerMensajeError(error)
+      set({ errorProyectos: mensaje })
+      throw new Error(mensaje)
+    }
+  },
+
+  reiniciarServicio: async (servicioId: number): Promise<void> => {
+    set({ errorProyectos: null })
+    try {
+      const estadoEjecucion = await window.api.servicios.reiniciar(servicioId)
+      set((estado) => ({
+        estadosComandos: {
+          ...estado.estadosComandos,
+          [estadoEjecucion.comandoId]: estadoEjecucion
+        }
+      }))
+    } catch (error) {
+      const mensaje = extraerMensajeError(error)
+      set({ errorProyectos: mensaje })
+      throw new Error(mensaje)
+    }
+  },
+
+  crearComandoPersonalizado: async (
+    proyectoId: number,
+    datos: CrearComandoPersonalizadoDatos
+  ): Promise<ComandoDTO> => {
+    set({ errorProyectos: null })
+    try {
+      const nuevoComando = await window.api.comandos.crearPersonalizado(datos)
+      const servicioActualizado = await window.api.servicios.obtener(datos.servicioId)
+      if (servicioActualizado) {
+        set((estado) => ({
+          proyectos: estado.proyectos.map((proyecto) =>
+            proyecto.id === proyectoId
+              ? {
+                  ...proyecto,
+                  servicios: (proyecto.servicios ?? []).map((srv) =>
+                    srv.id === datos.servicioId ? servicioActualizado : srv
+                  )
+                }
+              : proyecto
+          )
+        }))
+      }
+      return nuevoComando
+    } catch (error) {
+      const mensaje = extraerMensajeError(error)
+      set({ errorProyectos: mensaje })
+      throw new Error(mensaje)
+    }
+  },
+
+  establecerComandoPrincipal: async (
+    proyectoId: number,
+    servicioId: number,
+    comandoId: number
+  ): Promise<void> => {
+    set({ errorProyectos: null })
+    try {
+      const comandosActualizados = await window.api.comandos.establecerPrincipal(
+        servicioId,
+        comandoId
+      )
+      set((estado) => ({
+        proyectos: estado.proyectos.map((proyecto) =>
+          proyecto.id === proyectoId
+            ? {
+                ...proyecto,
+                servicios: (proyecto.servicios ?? []).map((srv) =>
+                  srv.id === servicioId ? { ...srv, comandos: comandosActualizados } : srv
+                )
+              }
+            : proyecto
+        )
+      }))
+    } catch (error) {
+      const mensaje = extraerMensajeError(error)
+      set({ errorProyectos: mensaje })
+      throw new Error(mensaje)
+    }
+  },
+
+  eliminarComando: async (
+    proyectoId: number,
+    servicioId: number,
+    comandoId: number
+  ): Promise<void> => {
+    set({ errorProyectos: null })
+    try {
+      await window.api.comandos.eliminar(comandoId)
+      const servicioActualizado = await window.api.servicios.obtener(servicioId)
+      set((estado) => ({
+        proyectos: estado.proyectos.map((proyecto) =>
+          proyecto.id === proyectoId
+            ? {
+                ...proyecto,
+                servicios: (proyecto.servicios ?? []).map((srv) =>
+                  srv.id === servicioId && servicioActualizado ? servicioActualizado : srv
+                )
+              }
+            : proyecto
+        )
+      }))
+    } catch (error) {
+      const mensaje = extraerMensajeError(error)
+      set({ errorProyectos: mensaje })
+      throw new Error(mensaje)
+    }
+  },
+
+  ejecutarComando: async (comandoId: number): Promise<void> => {
+    set({ errorProyectos: null })
+    try {
+      const estadoEjecucion = await window.api.comandos.ejecutar(comandoId)
+      set((estado) => ({
+        estadosComandos: {
+          ...estado.estadosComandos,
+          [comandoId]: estadoEjecucion
+        }
+      }))
+    } catch (error) {
+      const mensaje = extraerMensajeError(error)
+      set({ errorProyectos: mensaje })
+      throw new Error(mensaje)
+    }
+  },
+
+  detenerComando: async (comandoId: number): Promise<void> => {
+    set({ errorProyectos: null })
+    try {
+      const estadoEjecucion = await window.api.comandos.detener(comandoId)
+      set((estado) => ({
+        estadosComandos: {
+          ...estado.estadosComandos,
+          [comandoId]: estadoEjecucion
+        }
+      }))
+    } catch (error) {
+      const mensaje = extraerMensajeError(error)
+      set({ errorProyectos: mensaje })
+      throw new Error(mensaje)
+    }
+  },
+
+  reiniciarComando: async (comandoId: number): Promise<void> => {
+    set({ errorProyectos: null })
+    try {
+      const estadoEjecucion = await window.api.comandos.reiniciar(comandoId)
+      set((estado) => ({
+        estadosComandos: {
+          ...estado.estadosComandos,
+          [comandoId]: estadoEjecucion
+        }
+      }))
+    } catch (error) {
+      const mensaje = extraerMensajeError(error)
+      set({ errorProyectos: mensaje })
+      throw new Error(mensaje)
+    }
+  },
+
+  sincronizarEstadosComandos: async (): Promise<void> => {
+    try {
+      const lista = await window.api.comandos.obtenerEstados()
+      const mapa: Record<number, EstadoEjecucionComandoDTO> = {}
+      for (const item of lista) {
+        mapa[item.comandoId] = item
+      }
+      set({ estadosComandos: mapa })
+    } catch {
+      // Ignorar si aún no está listo
+    }
+  },
+
+  cargarLogsDeComando: async (comandoId: number): Promise<void> => {
+    try {
+      const entradas = await window.api.comandos.obtenerLogs(comandoId)
+      set((estado) => ({
+        logsPorComando: {
+          ...estado.logsPorComando,
+          [comandoId]: entradas
+        }
+      }))
+    } catch {
+      // Ignorar errores de carga inicial de logs
+    }
+  },
+
+  limpiarLogsDeComando: async (comandoId: number): Promise<void> => {
+    await window.api.comandos.limpiarLogs(comandoId)
+    set((estado) => ({
+      logsPorComando: {
+        ...estado.logsPorComando,
+        [comandoId]: []
+      }
+    }))
+  },
+
+  registrarEntradaLog: (entrada: EntradaLog): void => {
+    set((estado) => {
+      const actuales = estado.logsPorComando[entrada.comandoId] ?? []
+      const nuevos = [...actuales, entrada]
+      if (nuevos.length > LIMITE_LOGS_UI) {
+        nuevos.splice(0, nuevos.length - LIMITE_LOGS_UI)
+      }
+      return {
+        logsPorComando: {
+          ...estado.logsPorComando,
+          [entrada.comandoId]: nuevos
+        }
+      }
+    })
+  },
+
+  actualizarEstadoComando: (estadoEjecucion: EstadoEjecucionComandoDTO): void => {
+    set((estado) => ({
+      estadosComandos: {
+        ...estado.estadosComandos,
+        [estadoEjecucion.comandoId]: estadoEjecucion
+      }
+    }))
   },
 
   limpiarError: (): void => {

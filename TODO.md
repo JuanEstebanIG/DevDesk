@@ -23,25 +23,25 @@ Cada fase depende de que la anterior esté funcional. No saltar de fase sin comp
 
 **Check de fin de fase**: el usuario puede agregar un proyecto seleccionando una carpeta real, verlo en la lista, y eliminarlo. Los datos persisten entre reinicios de la app.
 
-## Fase 2 — Gestión de un solo servicio (días 4-6)
+## Fase 2 — Gestión de un solo servicio (días 4-6) (completada)
 
-- [ ] Repositorio `servicios.repositorio.ts`: crear, listar por proyecto, actualizar, eliminar
-- [ ] Servicio `detectorComandos.servicio.ts`: dado un path, leer TODO el objeto `scripts` de `package.json` (si existe) y crear un Comando por cada entrada encontrada (origen: `detectado`), no solo ofrecer dos sugerencias fijas
-- [ ] UI para crear un servicio dentro de un proyecto: nombre libre + selector de carpeta. Al guardar, los comandos detectados se crean automáticamente; después, el usuario marca cuál es el principal (esPrincipal) y puede agregar comandos personalizados
-- [ ] Servicio `gestorProcesos.servicio.ts`:
-  - [ ] Iniciar un proceso con `child_process.spawn` (usar `shell: true` en Windows) — recibe id de Comando, no de Servicio
-  - [ ] Capturar `stdout`/`stderr` y emitirlos por IPC (`comando:log`) al renderer en tiempo real
-  - [ ] Guardar PID de cada ejecución en memoria (trackear por Comando)
-  - [ ] Detener un proceso: usar `taskkill /pid <pid> /t /f` en Windows para matar el árbol completo
-  - [ ] Detectar cuándo un proceso termina o falla (evento `exit`/`error` de Node) y actualizar el estado
-  - [ ] Soporte para múltiples ejecuciones concurrentes por servicio (una por cada comando corriendo)
-- [ ] Controlador IPC: canales `servicio:iniciar`, `servicio:detener`, `servicio:reiniciar` (operan sobre el Comando esPrincipal)
-- [ ] Nuevo controlador IPC para canales `comando:ejecutar`, `comando:detener`, `comando:reiniciar`
-- [ ] Renderer: vista de detalle de servicio con lista completa de comandos disponibles, posibilidad de ejecutar cualquiera de ellos individualmente, estado actual, y consola de logs en tiempo real (solo en memoria, sin persistencia)
-- [ ] **Refactor visual**: Estética Dark Cyberpunk Minimalista en toda la UI (cards, botones, consola, navbar, breadcrumbs)
-- [ ] **Refactor de código**: Singleton PrismaClient, repositorio de comandos, fix pid=0, fix race condition reiniciarProceso, eliminación de código muerto
-- [ ] **File dialog defaultPath**: El diálogo de carpetas al crear servicio se abre en la carpeta del proyecto
-- [ ] **Fix detección de comandos**: `detectorComandos` almacena `npm run <script>` en vez del script raw para que funcione el PATH de node_modules en Windows
+- [x] Repositorio `servicios.repositorio.ts`: crear, listar por proyecto, actualizar, eliminar
+- [x] Servicio `detectorComandos.servicio.ts`: dado un path, leer TODO el objeto `scripts` de `package.json` (si existe) y crear un Comando por cada entrada encontrada (origen: `detectado`), no solo ofrecer dos sugerencias fijas
+- [x] UI para crear un servicio dentro de un proyecto: nombre libre + selector de carpeta. Al guardar, los comandos detectados se crean automáticamente; después, el usuario marca cuál es el principal (esPrincipal) y puede agregar comandos personalizados
+- [x] Servicio `gestorProcesos.servicio.ts`:
+  - [x] Iniciar un proceso con `child_process.spawn` (usar `shell: true` en Windows) — recibe id de Comando, no de Servicio
+  - [x] Capturar `stdout`/`stderr` y emitirlos por IPC (`comando:log`) al renderer en tiempo real
+  - [x] Guardar PID de cada ejecución en memoria (trackear por Comando)
+  - [x] Detener un proceso: usar `taskkill /pid <pid> /t /f` en Windows para matar el árbol completo
+  - [x] Detectar cuándo un proceso termina o falla (evento `exit`/`error` de Node) y actualizar el estado
+  - [x] Soporte para múltiples ejecuciones concurrentes por servicio (una por cada comando corriendo)
+- [x] Controlador IPC: canales `servicio:iniciar`, `servicio:detener`, `servicio:reiniciar` (operan sobre el Comando esPrincipal)
+- [x] Nuevo controlador IPC para canales `comando:ejecutar`, `comando:detener`, `comando:reiniciar`
+- [x] Renderer: vista de detalle de servicio con lista completa de comandos disponibles, posibilidad de ejecutar cualquiera de ellos individualmente, estado actual, y consola de logs en tiempo real (solo en memoria, sin persistencia)
+- [x] **Refactor visual**: Estética Dark Cyberpunk Minimalista en toda la UI (cards, botones, consola, navbar, breadcrumbs)
+- [x] **Refactor de código**: Singleton PrismaClient, repositorio de comandos, fix pid=0, fix race condition reiniciarProceso, eliminación de código muerto
+- [x] **File dialog defaultPath**: El diálogo de carpetas al crear servicio se abre en la carpeta del proyecto
+- [x] **Fix detección de comandos**: `detectorComandos` almacena `npm run <script>` en vez del script raw para que funcione el PATH de node_modules en Windows
 
 **Check de fin de fase**: el usuario puede iniciar un servicio real (ej. un `npm run dev` de un proyecto de prueba), ver sus logs en vivo, detenerlo limpiamente (sin procesos huérfanos en Windows), y reiniciarlo.
 

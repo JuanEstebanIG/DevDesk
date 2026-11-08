@@ -2,15 +2,18 @@ import { app, shell, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { registrarControladorProyectos } from './ipc/proyectos.controlador'
+import { registrarControladorServicios } from './ipc/servicios.controlador'
+import { registrarControladorComandos } from './ipc/comandos.controlador'
 import { registrarControladorDialogos } from './ipc/dialogos.controlador'
+import { gestorProcesos } from './servicios/gestorProcesos.servicio'
 
 function crearVentana(): void {
   const ventanaPrincipal = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width: 1240,
+    height: 820,
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: '#0a0a0f',
+    backgroundColor: '#14171c',
     webPreferences: {
       preload: join(__dirname, '../preload/preload.js'),
       sandbox: false
@@ -41,12 +44,25 @@ app.whenReady().then(() => {
   })
 
   registrarControladorProyectos()
+  registrarControladorServicios()
+  registrarControladorComandos()
   registrarControladorDialogos()
 
   crearVentana()
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) crearVentana()
+  })
+})
+
+let cerrandoProcesos = false
+
+app.on('before-quit', (evento) => {
+  if (cerrandoProcesos) return
+  evento.preventDefault()
+  cerrandoProcesos = true
+  gestorProcesos.detenerTodosLosProcesos().finally(() => {
+    app.quit()
   })
 })
 

@@ -1,5 +1,6 @@
 import fs from 'fs'
 import * as proyectosRepositorio from '../repositorios/proyectos.repositorio'
+import { gestorProcesos } from './gestorProcesos.servicio'
 import type { CrearProyectoDatos, ProyectoDTO } from '../../compartido/tipos'
 
 export async function listarProyectos(): Promise<ProyectoDTO[]> {
@@ -50,6 +51,10 @@ export async function eliminarProyecto(id: number): Promise<void> {
   const proyecto = await proyectosRepositorio.obtenerProyectoPorId(id)
   if (!proyecto) {
     throw new Error('El proyecto que intentas eliminar no existe.')
+  }
+
+  for (const servicio of proyecto.servicios) {
+    await gestorProcesos.detenerProcesosDeServicio(servicio.id)
   }
 
   await proyectosRepositorio.eliminarProyecto(id)

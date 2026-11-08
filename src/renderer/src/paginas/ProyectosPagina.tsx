@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAppStore } from '../store/appStore'
 
 function separarRuta(rutaCompleta: string): { directorioPadre: string; carpetaFinal: string } {
@@ -14,10 +15,12 @@ function separarRuta(rutaCompleta: string): { directorioPadre: string; carpetaFi
 }
 
 export function ProyectosPagina(): React.JSX.Element {
+  const navegar = useNavigate()
   const {
     proyectos,
     cargandoProyectos,
     errorProyectos,
+    estadosComandos,
     cargarProyectos,
     crearProyecto,
     eliminarProyecto,
@@ -175,7 +178,15 @@ export function ProyectosPagina(): React.JSX.Element {
           ) : (
             <div className="space-y-2.5">
               {proyectos.map((proyecto) => {
-                const cantidadServicios = proyecto.servicios?.length ?? 0
+                const servicios = proyecto.servicios ?? []
+                const cantidadServicios = servicios.length
+                const procesosActivos = servicios.reduce((acum, srv) => {
+                  const activosEnSrv = (srv.comandos ?? []).filter((cmd) => {
+                    const est = estadosComandos[cmd.id]?.estado
+                    return est === 'listo' || est === 'iniciando'
+                  }).length
+                  return acum + activosEnSrv
+                }, 0)
                 const confirmando = confirmandoEliminarId === proyecto.id
                 const esActivo = proyectoActivoId === proyecto.id
                 const { directorioPadre, carpetaFinal } = separarRuta(proyecto.path)
@@ -183,21 +194,38 @@ export function ProyectosPagina(): React.JSX.Element {
                 return (
                   <article
                     key={proyecto.id}
-                    onClick={() => setProyectoActivoId(proyecto.id)}
+                    onClick={() => navegar(`/proyectos/${proyecto.id}`)}
                     className={`bg-surface border border-border border-l-[3px] ${
-                      esActivo ? 'border-l-accent' : 'border-l-border hover:border-l-accent'
-                    } p-4 transition-colors duration-150`}
+                      procesosActivos > 0
+                        ? 'border-l-green'
+                        : esActivo
+                          ? 'border-l-accent'
+                          : 'border-l-border hover:border-l-accent'
+                    } p-4 transition-colors duration-150 cursor-pointer`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                       <div className="space-y-1.5 min-w-0 flex-1">
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <h2 className="font-display text-[16px] font-bold text-txt tracking-tight truncate">
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          <Link
+                            to={`/proyectos/${proyecto.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="font-display text-[16px] font-bold text-txt hover:text-accent tracking-tight truncate transition-colors duration-150"
+                          >
                             {proyecto.nombre}
-                          </h2>
+                          </Link>
                           <span className="font-mono text-xs bg-elevated border border-border px-2 py-0.5 text-txt-secondary">
                             {cantidadServicios}{' '}
                             {cantidadServicios === 1 ? 'servicio' : 'servicios'}
                           </span>
+                          {procesosActivos > 0 && (
+                            <span className="inline-flex items-center gap-1.5 font-mono text-xs bg-elevated border border-green/40 text-green px-2 py-0.5">
+                              <span
+                                aria-hidden="true"
+                                className="inline-block w-1.5 h-1.5 bg-green shadow-[0_0_6px_rgba(42,216,130,0.5)]"
+                              />
+                              {procesosActivos} en ejecución
+                            </span>
+                          )}
                         </div>
 
                         <div
@@ -210,25 +238,32 @@ export function ProyectosPagina(): React.JSX.Element {
                       </div>
 
                       <div
-                        className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-border shrink-0"
+                        className="flex items-center justify-between sm:justify-end gap-2 pt-2 sm:pt-0 border-t sm:border-t-0 border-border shrink-0"
                         onClick={(e) => e.stopPropagation()}
                       >
+                        <Link
+                          to={`/proyectos/${proyecto.id}`}
+                          className="bg-elevated border border-border hover:border-accent text-txt px-3 py-1.5 text-xs font-medium transition-colors duration-150 cursor-pointer"
+                        >
+                          Gestionar servicios
+                        </Link>
+
                         {confirmando ? (
                           <div className="flex items-center gap-2 bg-elevated border border-red/40 px-2.5 py-1">
-                            <span className="text-xs text-txt">¿Quitar del registro?</span>
+                            <span className="text-xs text-txt">¿Quitar?</span>
                             <button
                               type="button"
                               onClick={() => manejarEliminarProyecto(proyecto.id)}
                               className="text-xs font-medium text-red hover:bg-red/15 px-2 py-0.5 transition-colors duration-150 cursor-pointer"
                             >
-                              Quitar
+                              Sí
                             </button>
                             <button
                               type="button"
                               onClick={() => setConfirmandoEliminarId(null)}
                               className="text-xs text-txt-secondary hover:text-txt px-2 py-0.5 transition-colors duration-150 cursor-pointer"
                             >
-                              Conservar
+                              No
                             </button>
                           </div>
                         ) : (
@@ -237,7 +272,7 @@ export function ProyectosPagina(): React.JSX.Element {
                             onClick={() => setConfirmandoEliminarId(proyecto.id)}
                             className="text-xs text-txt-secondary hover:text-red hover:bg-red/10 border border-transparent hover:border-red/25 px-2.5 py-1.5 transition-colors duration-150 cursor-pointer"
                           >
-                            Quitar proyecto
+                            Quitar
                           </button>
                         )}
                       </div>
