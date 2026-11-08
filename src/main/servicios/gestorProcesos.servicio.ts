@@ -1,4 +1,5 @@
 import { spawn, execFile, type ChildProcess } from 'child_process'
+import { stripVTControlCharacters } from 'util'
 import { BrowserWindow } from 'electron'
 import fs from 'fs'
 import * as comandosRepositorio from '../repositorios/comandos.repositorio'
@@ -43,8 +44,11 @@ class GestorDeProcesos {
     texto: string
   ): void {
     const lineas = texto.replace(/\r\n/g, '\n').split('\n')
-    for (const linea of lineas) {
-      if (linea.length === 0) continue
+    for (const lineaCruda of lineas) {
+      const linea = stripVTControlCharacters(lineaCruda)
+        // Respaldo por si algún proceso emite secuencias CSI sin el carácter ESC inicial
+        .replace(/\[\d+(?:;\d+)*m/g, '')
+      if (linea.trim().length === 0) continue
 
       this.contadorLogs += 1
       const entrada: EntradaLog = {
@@ -151,7 +155,8 @@ class GestorDeProcesos {
       windowsHide: true,
       env: {
         ...process.env,
-        FORCE_COLOR: '0'
+        FORCE_COLOR: '0',
+        NO_COLOR: '1'
       }
     })
 
