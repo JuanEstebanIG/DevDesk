@@ -1,5 +1,6 @@
 import { ipcMain } from 'electron'
 import * as proyectosServicio from '../servicios/proyectos.servicio'
+import * as serviciosServicio from '../servicios/servicios.servicio'
 import type { CrearProyectoDatos } from '../../compartido/tipos'
 
 export function registrarControladorProyectos(): void {
@@ -17,5 +18,13 @@ export function registrarControladorProyectos(): void {
 
   ipcMain.handle('proyecto:eliminar', async (_event, id: number) => {
     await proyectosServicio.eliminarProyecto(id)
+  })
+
+  ipcMain.handle('proyecto:iniciarGrupo', async (_event, proyectoId: number) => {
+    return await serviciosServicio.iniciarGrupoProyecto(proyectoId)
+  })
+
+  ipcMain.handle('proyecto:detenerGrupo', async (_event, proyectoId: number) => {
+    await serviciosServicio.detenerGrupoProyecto(proyectoId)
   })
 }

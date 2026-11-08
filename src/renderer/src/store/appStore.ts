@@ -1,10 +1,12 @@
 import { create } from 'zustand'
 import type {
+  ActualizarServicioDatos,
   ComandoDTO,
   CrearComandoPersonalizadoDatos,
   CrearProyectoDatos,
   CrearServicioDatos,
   EntradaLog,
+  EstadoArranqueGrupoDTO,
   EstadoEjecucionComandoDTO,
   ProyectoDTO,
   ServicioDTO
@@ -12,18 +14,35 @@ import type {
 
 const LIMITE_LOGS_UI = 1500
 
+function ordenarServicios(servicios: ServicioDTO[]): ServicioDTO[] {
+  return [...servicios].sort((a, b) => {
+    if (a.ordenArranque !== b.ordenArranque) {
+      return a.ordenArranque - b.ordenArranque
+    }
+    return a.id - b.id
+  })
+}
+
 interface EstadoApp {
   proyectos: ProyectoDTO[]
   cargandoProyectos: boolean
   errorProyectos: string | null
   estadosComandos: Record<number, EstadoEjecucionComandoDTO>
+  estadosGrupos: Record<number, EstadoArranqueGrupoDTO>
   logsPorComando: Record<number, EntradaLog[]>
 
   cargarProyectos: () => Promise<void>
   crearProyecto: (datos: CrearProyectoDatos) => Promise<ProyectoDTO>
   eliminarProyecto: (id: number) => Promise<void>
+  iniciarGrupoProyecto: (proyectoId: number) => Promise<void>
+  detenerGrupoProyecto: (proyectoId: number) => Promise<void>
 
   crearServicio: (datos: CrearServicioDatos) => Promise<ServicioDTO>
+  actualizarServicio: (
+    proyectoId: number,
+    servicioId: number,
+    datos: ActualizarServicioDatos
+  ) => Promise<ServicioDTO>
   eliminarServicio: (proyectoId: number, servicioId: number) => Promise<void>
   iniciarServicio: (servicioId: number) => Promise<void>
   detenerServicio: (servicioId: number) => Promise<void>
@@ -48,6 +67,7 @@ interface EstadoApp {
   limpiarLogsDeComando: (comandoId: number) => Promise<void>
   registrarEntradaLog: (entrada: EntradaLog) => void
   actualizarEstadoComando: (estado: EstadoEjecucionComandoDTO) => void
+  actualizarEstadoGrupo: (estado: EstadoArranqueGrupoDTO) => void
   limpiarError: () => void
 }
 
@@ -63,6 +83,7 @@ export const useAppStore = create<EstadoApp>((set) => ({
   cargandoProyectos: false,
   errorProyectos: null,
   estadosComandos: {},
+  estadosGrupos: {},
   logsPorComando: {},
 
   cargarProyectos: async (): Promise<void> => {
@@ -107,6 +128,35 @@ export const useAppStore = create<EstadoApp>((set) => ({
     }
   },
 
+  iniciarGrupoProyecto: async (proyectoId: number): Promise<void> => {
+    set({ errorProyectos: null })
+    try {
+      const resultado = await window.api.proyectos.iniciarGrupo(proyectoId)
+      set((estado) => ({
+        estadosGrupos: {
+          ...estado.estadosGrupos,
+          [proyectoId]: resultado
+        },
+        errorProyectos: resultado.errorMensaje ?? estado.errorProyectos
+      }))
+    } catch (error) {
+      const mensaje = extraerMensajeError(error)
+      set({ errorProyectos: mensaje })
+      throw new Error(mensaje)
+    }
+  },
+
+  detenerGrupoProyecto: async (proyectoId: number): Promise<void> => {
+    set({ errorProyectos: null })
+    try {
+      await window.api.proyectos.detenerGrupo(proyectoId)
+    } catch (error) {
+      const mensaje = extraerMensajeError(error)
+      set({ errorProyectos: mensaje })
+      throw new Error(mensaje)
+    }
+  },
+
   crearServicio: async (datos: CrearServicioDatos): Promise<ServicioDTO> => {
     set({ errorProyectos: null })
     try {
@@ -116,12 +166,42 @@ export const useAppStore = create<EstadoApp>((set) => ({
           proyecto.id === datos.proyectoId
             ? {
                 ...proyecto,
-                servicios: [...(proyecto.servicios ?? []), nuevoServicio]
+                servicios: ordenarServicios([...(proyecto.servicios ?? []), nuevoServicio])
               }
             : proyecto
         )
       }))
       return nuevoServicio
+    } catch (error) {
+      const mensaje = extraerMensajeError(error)
+      set({ errorProyectos: mensaje })
+      throw new Error(mensaje)
+    }
+  },
+
+  actualizarServicio: async (
+    proyectoId: number,
+    servicioId: number,
+    datos: ActualizarServicioDatos
+  ): Promise<ServicioDTO> => {
+    set({ errorProyectos: null })
+    try {
+      const actualizado = await window.api.servicios.actualizar(servicioId, datos)
+      set((estado) => ({
+        proyectos: estado.proyectos.map((proyecto) =>
+          proyecto.id === proyectoId
+            ? {
+                ...proyecto,
+                servicios: ordenarServicios(
+                  (proyecto.servicios ?? []).map((srv) =>
+                    srv.id === servicioId ? actualizado : srv
+                  )
+                )
+              }
+            : proyecto
+        )
+      }))
+      return actualizado
     } catch (error) {
       const mensaje = extraerMensajeError(error)
       set({ errorProyectos: mensaje })
@@ -399,6 +479,16 @@ export const useAppStore = create<EstadoApp>((set) => ({
         ...estado.estadosComandos,
         [estadoEjecucion.comandoId]: estadoEjecucion
       }
+    }))
+  },
+
+  actualizarEstadoGrupo: (estadoGrupo: EstadoArranqueGrupoDTO): void => {
+    set((estado) => ({
+      estadosGrupos: {
+        ...estado.estadosGrupos,
+        [estadoGrupo.proyectoId]: estadoGrupo
+      },
+      errorProyectos: estadoGrupo.errorMensaje ?? estado.errorProyectos
     }))
   },
 

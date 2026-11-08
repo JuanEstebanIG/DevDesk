@@ -7,6 +7,7 @@ import type {
   CrearProyectoDatos,
   CrearServicioDatos,
   EntradaLog,
+  EstadoArranqueGrupoDTO,
   EstadoEjecucionComandoDTO,
   ProyectoDTO,
   ServicioDTO
@@ -19,7 +20,23 @@ const api: ApiElectron = {
       ipcRenderer.invoke('proyecto:obtener', id),
     crear: (datos: CrearProyectoDatos): Promise<ProyectoDTO> =>
       ipcRenderer.invoke('proyecto:crear', datos),
-    eliminar: (id: number): Promise<void> => ipcRenderer.invoke('proyecto:eliminar', id)
+    eliminar: (id: number): Promise<void> => ipcRenderer.invoke('proyecto:eliminar', id),
+    iniciarGrupo: (proyectoId: number): Promise<EstadoArranqueGrupoDTO> =>
+      ipcRenderer.invoke('proyecto:iniciarGrupo', proyectoId),
+    detenerGrupo: (proyectoId: number): Promise<void> =>
+      ipcRenderer.invoke('proyecto:detenerGrupo', proyectoId),
+    onEstadoGrupo: (callback: (estado: EstadoArranqueGrupoDTO) => void): (() => void) => {
+      const manejador = (
+        _event: Electron.IpcRendererEvent,
+        estado: EstadoArranqueGrupoDTO
+      ): void => {
+        callback(estado)
+      }
+      ipcRenderer.on('grupo:estado', manejador)
+      return () => {
+        ipcRenderer.removeListener('grupo:estado', manejador)
+      }
+    }
   },
   servicios: {
     listarPorProyecto: (proyectoId: number): Promise<ServicioDTO[]> =>
