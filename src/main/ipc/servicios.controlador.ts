@@ -22,6 +22,13 @@ export function registrarControladorServicios(): void {
     }
   )
 
+  ipcMain.handle(
+    'servicio:reordenar',
+    async (_event, proyectoId: number, idsServiciosEnOrden: number[]) => {
+      return await serviciosServicio.reordenarServicios(proyectoId, idsServiciosEnOrden)
+    }
+  )
+
   ipcMain.handle('servicio:eliminar', async (_event, id: number) => {
     await serviciosServicio.eliminarServicio(id)
   })

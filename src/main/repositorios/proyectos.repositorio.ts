@@ -26,15 +26,33 @@ export async function crearProyecto(datos: CrearProyectoDatos): Promise<Proyecto
 
 export async function listarProyectos(): Promise<ProyectoConRelaciones[]> {
   const prisma = obtenerClientePrisma()
-  return await prisma.proyecto.findMany({
+  const proyectos = await prisma.proyecto.findMany({
     orderBy: { fechaCreacion: 'desc' },
     include: {
       servicios: {
-        orderBy: { ordenArranque: 'asc' },
+        orderBy: [{ ordenArranque: 'asc' }, { id: 'asc' }],
         include: { comandos: true }
       }
     }
   })
+
+  for (const proyecto of proyectos) {
+    const requiereNormalizacion = proyecto.servicios.some(
+      (srv, indice) => srv.ordenArranque !== indice + 1
+    )
+    if (requiereNormalizacion) {
+      for (let i = 0; i < proyecto.servicios.length; i++) {
+        const srv = proyecto.servicios[i]
+        srv.ordenArranque = i + 1
+        await prisma.servicio.update({
+          where: { id: srv.id },
+          data: { ordenArranque: i + 1 }
+        })
+      }
+    }
+  }
+
+  return proyectos
 }
 
 export async function obtenerProyectoPorId(id: number): Promise<ProyectoConRelaciones | null> {

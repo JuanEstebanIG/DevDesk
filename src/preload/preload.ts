@@ -47,6 +47,8 @@ const api: ApiElectron = {
       ipcRenderer.invoke('servicio:crear', datos),
     actualizar: (id: number, datos: ActualizarServicioDatos): Promise<ServicioDTO> =>
       ipcRenderer.invoke('servicio:actualizar', id, datos),
+    reordenar: (proyectoId: number, idsServiciosEnOrden: number[]): Promise<ServicioDTO[]> =>
+      ipcRenderer.invoke('servicio:reordenar', proyectoId, idsServiciosEnOrden),
     eliminar: (id: number): Promise<void> => ipcRenderer.invoke('servicio:eliminar', id),
     iniciar: (servicioId: number): Promise<EstadoEjecucionComandoDTO> =>
       ipcRenderer.invoke('servicio:iniciar', servicioId),
