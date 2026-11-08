@@ -1,6 +1,8 @@
 import { app, shell, BrowserWindow } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { registrarControladorProyectos } from './ipc/proyectos.controlador'
+import { registrarControladorDialogos } from './ipc/dialogos.controlador'
 
 function crearVentana(): void {
   const ventanaPrincipal = new BrowserWindow({
@@ -37,6 +39,9 @@ app.whenReady().then(() => {
   app.on('browser-window-created', (_, window) => {
     optimizer.watchWindowShortcuts(window)
   })
+
+  registrarControladorProyectos()
+  registrarControladorDialogos()
 
   crearVentana()
 
