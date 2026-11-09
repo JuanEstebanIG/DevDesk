@@ -20,6 +20,7 @@ export interface EstadoEjecucionComandoDTO {
   servicioId: number
   pid: number | null
   estado: EstadoEjecucion
+  ultimoError?: string | null
 }
 
 export interface EstadoArranqueGrupoDTO {
@@ -30,6 +31,12 @@ export interface EstadoArranqueGrupoDTO {
   pasoActual: number
   totalPasos: number
   errorMensaje: string | null
+}
+
+export interface ComandoDetectadoPrevioDTO {
+  etiqueta: string
+  comando: string
+  esPrincipalSugerido: boolean
 }
 
 export interface EventoLogComando {
@@ -76,6 +83,11 @@ export interface CrearServicioDatos {
   tipoHealthCheck?: TipoHealthCheck
   objetivoHealthCheck?: string | null
   ordenArranque?: number
+  etiquetaPrincipalSeleccionada?: string | null
+  comandoManualPrincipal?: {
+    etiqueta: string
+    comando: string
+  } | null
 }
 
 export interface ActualizarServicioDatos {
@@ -84,6 +96,11 @@ export interface ActualizarServicioDatos {
   tipoHealthCheck?: TipoHealthCheck
   objetivoHealthCheck?: string | null
   ordenArranque?: number
+  comandoPrincipalId?: number
+  comandoManualPrincipal?: {
+    etiqueta: string
+    comando: string
+  } | null
 }
 
 export interface CrearComandoPersonalizadoDatos {
@@ -99,13 +116,17 @@ export interface ApiElectron {
     obtener: (id: number) => Promise<ProyectoDTO | null>
     crear: (datos: CrearProyectoDatos) => Promise<ProyectoDTO>
     eliminar: (id: number) => Promise<void>
-    iniciarGrupo: (proyectoId: number) => Promise<EstadoArranqueGrupoDTO>
+    iniciarGrupo: (
+      proyectoId: number,
+      servicioIdsSeleccionados?: number[]
+    ) => Promise<EstadoArranqueGrupoDTO>
     detenerGrupo: (proyectoId: number) => Promise<void>
     onEstadoGrupo: (callback: (estado: EstadoArranqueGrupoDTO) => void) => () => void
   }
   servicios: {
     listarPorProyecto: (proyectoId: number) => Promise<ServicioDTO[]>
     obtener: (id: number) => Promise<ServicioDTO | null>
+    detectarComandosEnCarpeta: (rutaCarpeta: string) => Promise<ComandoDetectadoPrevioDTO[]>
     crear: (datos: CrearServicioDatos) => Promise<ServicioDTO>
     actualizar: (id: number, datos: ActualizarServicioDatos) => Promise<ServicioDTO>
     reordenar: (proyectoId: number, idsServiciosEnOrden: number[]) => Promise<ServicioDTO[]>

@@ -22,6 +22,7 @@ interface EjecucionActiva {
   proceso: ChildProcess
   detenidoManualmente: boolean
   terminadoPorFalloSalud: boolean
+  ultimoMensajeError: string | null
   promesaCierre: Promise<void>
 }
 
@@ -65,6 +66,13 @@ class GestorDeProcesos {
         marcaTiempo: new Date().toLocaleTimeString('es-ES', { hour12: false })
       }
 
+      if (flujo === 'stderr') {
+        const activa = this.ejecuciones.get(comandoId)
+        if (activa) {
+          activa.ultimoMensajeError = linea.trim()
+        }
+      }
+
       const listaActual = this.logsPorComando.get(comandoId) ?? []
       listaActual.push(entrada)
       if (listaActual.length > LIMITE_LOGS_MEMORIA) {
@@ -81,13 +89,15 @@ class GestorDeProcesos {
     comandoId: number,
     servicioId: number,
     pid: number | null,
-    estado: EstadoEjecucion
+    estado: EstadoEjecucion,
+    ultimoError: string | null = null
   ): EstadoEjecucionComandoDTO {
     const dto: EstadoEjecucionComandoDTO = {
       comandoId,
       servicioId,
       pid,
-      estado
+      estado,
+      ultimoError: estado === 'error' ? ultimoError : null
     }
     this.estadosHistoricos.set(comandoId, dto)
 
@@ -136,7 +146,8 @@ class GestorDeProcesos {
         comandoId: ejecucionExistente.comandoId,
         servicioId: ejecucionExistente.servicioId,
         pid: ejecucionExistente.pid,
-        estado: ejecucionExistente.estado
+        estado: ejecucionExistente.estado,
+        ultimoError: null
       }
     }
 
@@ -147,7 +158,10 @@ class GestorDeProcesos {
 
     const { servicio } = comandoDatos
     if (!fs.existsSync(servicio.path)) {
-      throw new Error(`La carpeta del servicio no existe: ${servicio.path}`)
+      const msgCarpeta = `La carpeta del servicio no existe en disco: ${servicio.path}`
+      this.registrarLog(comandoId, servicio.id, 'stderr', msgCarpeta)
+      this.actualizarYEmitirEstado(comandoId, servicio.id, null, 'error', msgCarpeta)
+      throw new Error(msgCarpeta)
     }
 
     this.registrarLog(
@@ -157,7 +171,7 @@ class GestorDeProcesos {
       `Iniciando [${comandoDatos.etiqueta}] → ${comandoDatos.comando} (${servicio.path})`
     )
 
-    this.actualizarYEmitirEstado(comandoId, servicio.id, null, 'iniciando')
+    this.actualizarYEmitirEstado(comandoId, servicio.id, null, 'iniciando', null)
 
     const proceso = spawn(comandoDatos.comando, {
       cwd: servicio.path,
@@ -171,14 +185,9 @@ class GestorDeProcesos {
     })
 
     if (!proceso.pid || proceso.pid <= 0) {
-      const estadoError = this.actualizarYEmitirEstado(comandoId, servicio.id, null, 'error')
-      this.registrarLog(
-        comandoId,
-        servicio.id,
-        'stderr',
-        'No fue posible obtener un PID válido del sistema operativo al iniciar el comando.'
-      )
-      return estadoError
+      const msgPid = 'No fue posible obtener un PID válido del sistema operativo al iniciar el comando.'
+      this.registrarLog(comandoId, servicio.id, 'stderr', msgPid)
+      return this.actualizarYEmitirEstado(comandoId, servicio.id, null, 'error', msgPid)
     }
 
     const pidReal = proceso.pid
@@ -195,11 +204,12 @@ class GestorDeProcesos {
       proceso,
       detenidoManualmente: false,
       terminadoPorFalloSalud: false,
+      ultimoMensajeError: null,
       promesaCierre
     }
 
     this.ejecuciones.set(comandoId, nuevaEjecucion)
-    this.actualizarYEmitirEstado(comandoId, servicio.id, pidReal, 'iniciando')
+    this.actualizarYEmitirEstado(comandoId, servicio.id, pidReal, 'iniciando', null)
 
     proceso.stdout?.on('data', (fragmento: Buffer) => {
       this.registrarLog(comandoId, servicio.id, 'stdout', fragmento.toString('utf-8'))
@@ -210,22 +220,27 @@ class GestorDeProcesos {
     })
 
     proceso.on('error', (error: Error) => {
-      this.registrarLog(
-        comandoId,
-        servicio.id,
-        'stderr',
-        `Error en el proceso (PID ${pidReal}): ${error.message}`
-      )
+      const msgErr = `Error al ejecutar proceso (PID ${pidReal}): ${error.message}`
+      nuevaEjecucion.ultimoMensajeError = msgErr
+      this.registrarLog(comandoId, servicio.id, 'stderr', msgErr)
     })
 
     proceso.on('close', (codigoSalida: number | null) => {
       const actual = this.ejecuciones.get(comandoId)
       const fueManual = actual?.detenidoManualmente ?? false
       const fueFalloSalud = actual?.terminadoPorFalloSalud ?? false
+      const detalleStderr = actual?.ultimoMensajeError ?? null
       this.ejecuciones.delete(comandoId)
 
       if (fueFalloSalud) {
-        this.actualizarYEmitirEstado(comandoId, servicio.id, null, 'error')
+        const previo = this.estadosHistoricos.get(comandoId)
+        this.actualizarYEmitirEstado(
+          comandoId,
+          servicio.id,
+          null,
+          'error',
+          previo?.ultimoError ?? detalleStderr ?? 'El servicio no superó su health check.'
+        )
       } else if (fueManual || codigoSalida === 0) {
         this.registrarLog(
           comandoId,
@@ -235,15 +250,18 @@ class GestorDeProcesos {
             ? `Proceso detenido manualmente (PID ${pidReal}).`
             : `Proceso finalizado correctamente (código 0).`
         )
-        this.actualizarYEmitirEstado(comandoId, servicio.id, null, 'detenido')
+        this.actualizarYEmitirEstado(comandoId, servicio.id, null, 'detenido', null)
       } else {
+        const msgSalida = `El comando "${comandoDatos.comando}" terminó con código ${codigoSalida ?? 'desconocido'}${
+          detalleStderr ? `: ${detalleStderr}` : '.'
+        }`
         this.registrarLog(
           comandoId,
           servicio.id,
           'stderr',
           `El proceso terminó con código de salida ${codigoSalida ?? 'desconocido'}.`
         )
-        this.actualizarYEmitirEstado(comandoId, servicio.id, null, 'error')
+        this.actualizarYEmitirEstado(comandoId, servicio.id, null, 'error', msgSalida)
       }
 
       resolverCierre()
@@ -275,21 +293,29 @@ class GestorDeProcesos {
     const ejecucionTrasVerificacion = this.ejecuciones.get(comandoId)
 
     if (ejecucionTrasVerificacion?.detenidoManualmente) {
-      return this.actualizarYEmitirEstado(comandoId, servicio.id, null, 'detenido')
+      return this.actualizarYEmitirEstado(comandoId, servicio.id, null, 'detenido', null)
     }
 
     if (!resultadoSalud.exito) {
+      const previo = this.estadosHistoricos.get(comandoId)
+      const motivoFinal =
+        previo?.ultimoError ??
+        ejecucionTrasVerificacion?.ultimoMensajeError ??
+        resultadoSalud.motivoError ??
+        'Fallo al verificar disponibilidad del servicio.'
+
       if (resultadoSalud.motivoError) {
         this.registrarLog(comandoId, servicio.id, 'stderr', resultadoSalud.motivoError)
       }
-      await this.detenerProcesoPorFalloSalud(comandoId, servicio.id)
-      return this.actualizarYEmitirEstado(comandoId, servicio.id, null, 'error')
+      await this.detenerProcesoPorFalloSalud(comandoId, servicio.id, motivoFinal)
+      return this.actualizarYEmitirEstado(comandoId, servicio.id, null, 'error', motivoFinal)
     }
 
     if (!this.ejecuciones.has(comandoId)) {
       const estadoFinal = this.estadosHistoricos.get(comandoId)
       return (
-        estadoFinal ?? this.actualizarYEmitirEstado(comandoId, servicio.id, null, 'detenido')
+        estadoFinal ??
+        this.actualizarYEmitirEstado(comandoId, servicio.id, null, 'detenido', null)
       )
     }
 
@@ -302,27 +328,29 @@ class GestorDeProcesos {
       )
     }
 
-    return this.actualizarYEmitirEstado(comandoId, servicio.id, pidReal, 'listo')
+    return this.actualizarYEmitirEstado(comandoId, servicio.id, pidReal, 'listo', null)
   }
 
   private async detenerProcesoPorFalloSalud(
     comandoId: number,
-    servicioId: number
+    servicioId: number,
+    motivoError: string
   ): Promise<void> {
     const ejecucion = this.ejecuciones.get(comandoId)
     if (!ejecucion) {
-      this.actualizarYEmitirEstado(comandoId, servicioId, null, 'error')
+      this.actualizarYEmitirEstado(comandoId, servicioId, null, 'error', motivoError)
       return
     }
 
     ejecucion.terminadoPorFalloSalud = true
+    this.actualizarYEmitirEstado(comandoId, servicioId, null, 'error', motivoError)
     await this.matarArbolDeProceso(ejecucion.pid)
     await Promise.race([
       ejecucion.promesaCierre,
       new Promise<void>((resolve) => setTimeout(resolve, 3000))
     ])
     this.ejecuciones.delete(comandoId)
-    this.actualizarYEmitirEstado(comandoId, servicioId, null, 'error')
+    this.actualizarYEmitirEstado(comandoId, servicioId, null, 'error', motivoError)
   }
 
   public async detenerProceso(comandoId: number): Promise<EstadoEjecucionComandoDTO> {
@@ -331,7 +359,7 @@ class GestorDeProcesos {
       const previo = this.estadosHistoricos.get(comandoId)
       const comandoDatos = await comandosRepositorio.obtenerComandoPorId(comandoId)
       const servicioId = previo?.servicioId ?? comandoDatos?.servicioId ?? 0
-      return this.actualizarYEmitirEstado(comandoId, servicioId, null, 'detenido')
+      return this.actualizarYEmitirEstado(comandoId, servicioId, null, 'detenido', null)
     }
 
     ejecucion.detenidoManualmente = true
@@ -343,7 +371,7 @@ class GestorDeProcesos {
     ])
 
     this.ejecuciones.delete(comandoId)
-    return this.actualizarYEmitirEstado(comandoId, ejecucion.servicioId, null, 'detenido')
+    return this.actualizarYEmitirEstado(comandoId, ejecucion.servicioId, null, 'detenido', null)
   }
 
   public async reiniciarProceso(comandoId: number): Promise<EstadoEjecucionComandoDTO> {

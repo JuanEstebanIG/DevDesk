@@ -1,7 +1,12 @@
 import React, { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useAppStore } from '../store/appStore'
-import type { EstadoEjecucion, ServicioDTO, TipoHealthCheck } from '../../../compartido/tipos'
+import type {
+  ComandoDetectadoPrevioDTO,
+  EstadoEjecucion,
+  ServicioDTO,
+  TipoHealthCheck
+} from '../../../compartido/tipos'
 
 function separarRuta(rutaCompleta: string): { directorioPadre: string; carpetaFinal: string } {
   const limpia = rutaCompleta.replace(/[/\\]+$/, '')
@@ -48,6 +53,8 @@ function obtenerEtiquetaEstado(estado: EstadoEjecucion): {
   }
 }
 
+const OPCION_COMANDO_MANUAL = '__manual__'
+
 export function ProyectoDetallePagina(): React.JSX.Element {
   const { proyectoId } = useParams<{ proyectoId: string }>()
   const navegar = useNavigate()
@@ -72,22 +79,39 @@ export function ProyectoDetallePagina(): React.JSX.Element {
     limpiarError
   } = useAppStore()
 
+  // Estado para formulario de creación de servicio
   const [nombreServicio, setNombreServicio] = useState('')
   const [rutaServicio, setRutaServicio] = useState('')
+  const [comandosDetectadosPrevios, setComandosDetectadosPrevios] = useState<
+    ComandoDetectadoPrevioDTO[]
+  >([])
+  const [seleccionComandoNuevo, setSeleccionComandoNuevo] = useState<string>('')
+  const [etiquetaManualNueva, setEtiquetaManualNueva] = useState('dev')
+  const [comandoManualNuevo, setComandoManualNuevo] = useState('')
   const [tipoHealthNuevo, setTipoHealthNuevo] = useState<TipoHealthCheck>('none')
   const [objetivoHealthNuevo, setObjetivoHealthNuevo] = useState('')
   const [ordenNuevo, setOrdenNuevo] = useState<number>(1)
   const [guardando, setGuardando] = useState(false)
 
+  // Selección granular de servicios para el arranque de grupo
+  const [serviciosSeleccionadosIds, setServiciosSeleccionadosIds] = useState<number[]>([])
+
   const [confirmandoEliminarId, setConfirmandoEliminarId] = useState<number | null>(null)
   const [operandoServicioId, setOperandoServicioId] = useState<number | null>(null)
 
+  // Estado para edición completa de un servicio existente
   const [editandoServicioId, setEditandoServicioId] = useState<number | null>(null)
+  const [nombreEdicion, setNombreEdicion] = useState('')
+  const [rutaEdicion, setRutaEdicion] = useState('')
   const [ordenEdicion, setOrdenEdicion] = useState<number>(1)
   const [tipoHealthEdicion, setTipoHealthEdicion] = useState<TipoHealthCheck>('none')
   const [objetivoHealthEdicion, setObjetivoHealthEdicion] = useState<string>('')
+  const [seleccionComandoEdicion, setSeleccionComandoEdicion] = useState<string>('')
+  const [etiquetaManualEdicion, setEtiquetaManualEdicion] = useState('custom')
+  const [comandoManualEdicion, setComandoManualEdicion] = useState('')
   const [guardandoEdicion, setGuardandoEdicion] = useState(false)
 
+  // Drag & Drop
   const [arrastrandoId, setArrastrandoId] = useState<number | null>(null)
   const [sobreDestinoId, setSobreDestinoId] = useState<number | null>(null)
 
@@ -102,6 +126,55 @@ export function ProyectoDetallePagina(): React.JSX.Element {
   useEffect(() => {
     setOrdenNuevo(servicios.length + 1)
   }, [servicios.length])
+
+  // Sincronizar selección granular al cambiar los servicios del proyecto
+  useEffect(() => {
+    const idsActuales = servicios.map((s) => s.id)
+    setServiciosSeleccionadosIds((prev) => {
+      if (prev.length === 0 && idsActuales.length > 0) {
+        return idsActuales
+      }
+      const conservados = prev.filter((id) => idsActuales.includes(id))
+      const nuevos = idsActuales.filter((id) => !prev.includes(id))
+      return [...conservados, ...nuevos]
+    })
+  }, [proyecto?.id, servicios.length])
+
+  // Detectar comandos de package.json en vivo al cambiar rutaServicio
+  useEffect(() => {
+    let cancelado = false
+    const rutaLimpia = rutaServicio.trim()
+
+    if (!rutaLimpia) {
+      setComandosDetectadosPrevios([])
+      setSeleccionComandoNuevo('')
+      return
+    }
+
+    window.api.servicios
+      .detectarComandosEnCarpeta(rutaLimpia)
+      .then((detectados) => {
+        if (cancelado) return
+        setComandosDetectadosPrevios(detectados)
+        if (detectados.length > 0) {
+          const sugerido =
+            detectados.find((d) => d.esPrincipalSugerido) ?? detectados[0]
+          setSeleccionComandoNuevo(sugerido.etiqueta)
+        } else {
+          setSeleccionComandoNuevo(OPCION_COMANDO_MANUAL)
+        }
+      })
+      .catch(() => {
+        if (!cancelado) {
+          setComandosDetectadosPrevios([])
+          setSeleccionComandoNuevo(OPCION_COMANDO_MANUAL)
+        }
+      })
+
+    return () => {
+      cancelado = true
+    }
+  }, [rutaServicio])
 
   const manejarSeleccionarCarpeta = async (): Promise<void> => {
     if (!proyecto) return
@@ -120,9 +193,21 @@ export function ProyectoDetallePagina(): React.JSX.Element {
     }
   }
 
+  const manejarSeleccionarCarpetaEdicion = async (): Promise<void> => {
+    if (!proyecto) return
+    const carpetaSeleccionada = await window.api.dialogos.abrirCarpeta(
+      rutaEdicion.trim() || proyecto.path
+    )
+    if (carpetaSeleccionada) {
+      setRutaEdicion(carpetaSeleccionada)
+    }
+  }
+
   const manejarCrearServicio = async (evento: React.FormEvent): Promise<void> => {
     evento.preventDefault()
     if (!proyecto || !nombreServicio.trim() || !rutaServicio.trim()) return
+
+    const usaManual = seleccionComandoNuevo === OPCION_COMANDO_MANUAL
 
     setGuardando(true)
     try {
@@ -132,10 +217,23 @@ export function ProyectoDetallePagina(): React.JSX.Element {
         path: rutaServicio.trim(),
         tipoHealthCheck: tipoHealthNuevo,
         objetivoHealthCheck: tipoHealthNuevo === 'none' ? null : objetivoHealthNuevo.trim(),
-        ordenArranque: ordenNuevo
+        ordenArranque: ordenNuevo,
+        etiquetaPrincipalSeleccionada:
+          !usaManual && seleccionComandoNuevo ? seleccionComandoNuevo : null,
+        comandoManualPrincipal:
+          usaManual && comandoManualNuevo.trim()
+            ? {
+                etiqueta: etiquetaManualNueva.trim() || 'principal',
+                comando: comandoManualNuevo.trim()
+              }
+            : null
       })
       setNombreServicio('')
       setRutaServicio('')
+      setComandosDetectadosPrevios([])
+      setSeleccionComandoNuevo('')
+      setEtiquetaManualNueva('dev')
+      setComandoManualNuevo('')
       setTipoHealthNuevo('none')
       setObjetivoHealthNuevo('')
       navegar(`/proyectos/${proyecto.id}/servicios/${creado.id}`)
@@ -184,6 +282,8 @@ export function ProyectoDetallePagina(): React.JSX.Element {
 
   const abrirEdicionServicio = (servicio: ServicioDTO): void => {
     setEditandoServicioId(servicio.id)
+    setNombreEdicion(servicio.nombre)
+    setRutaEdicion(servicio.path)
     setOrdenEdicion(servicio.ordenArranque)
     setTipoHealthEdicion(
       servicio.tipoHealthCheck === 'http' || servicio.tipoHealthCheck === 'tcp'
@@ -191,6 +291,16 @@ export function ProyectoDetallePagina(): React.JSX.Element {
         : 'none'
     )
     setObjetivoHealthEdicion(servicio.objetivoHealthCheck ?? '')
+
+    const comandosSrv = servicio.comandos ?? []
+    const cmdPrincipal = comandosSrv.find((c) => c.esPrincipal) ?? comandosSrv[0]
+    if (cmdPrincipal) {
+      setSeleccionComandoEdicion(String(cmdPrincipal.id))
+    } else {
+      setSeleccionComandoEdicion(OPCION_COMANDO_MANUAL)
+    }
+    setEtiquetaManualEdicion('custom')
+    setComandoManualEdicion('')
   }
 
   const manejarGuardarEdicion = async (
@@ -200,13 +310,26 @@ export function ProyectoDetallePagina(): React.JSX.Element {
     evento.preventDefault()
     if (!proyecto) return
 
+    const usaManual = seleccionComandoEdicion === OPCION_COMANDO_MANUAL
+
     setGuardandoEdicion(true)
     try {
       await actualizarServicio(proyecto.id, servicioId, {
+        nombre: nombreEdicion.trim(),
+        path: rutaEdicion.trim(),
         ordenArranque: ordenEdicion,
         tipoHealthCheck: tipoHealthEdicion,
         objetivoHealthCheck:
-          tipoHealthEdicion === 'none' ? null : objetivoHealthEdicion.trim()
+          tipoHealthEdicion === 'none' ? null : objetivoHealthEdicion.trim(),
+        comandoPrincipalId:
+          !usaManual && seleccionComandoEdicion ? Number(seleccionComandoEdicion) : undefined,
+        comandoManualPrincipal:
+          usaManual && comandoManualEdicion.trim()
+            ? {
+                etiqueta: etiquetaManualEdicion.trim() || 'principal',
+                comando: comandoManualEdicion.trim()
+              }
+            : null
       })
       setEditandoServicioId(null)
     } catch {
@@ -243,6 +366,22 @@ export function ProyectoDetallePagina(): React.JSX.Element {
       // El store expone el error
     } finally {
       setOperandoServicioId(null)
+    }
+  }
+
+  const alternarSeleccionServicio = (servicioId: number): void => {
+    setServiciosSeleccionadosIds((prev) =>
+      prev.includes(servicioId)
+        ? prev.filter((id) => id !== servicioId)
+        : [...prev, servicioId]
+    )
+  }
+
+  const alternarSeleccionTodos = (): void => {
+    if (serviciosSeleccionadosIds.length === servicios.length) {
+      setServiciosSeleccionadosIds([])
+    } else {
+      setServiciosSeleccionadosIds(servicios.map((s) => s.id))
     }
   }
 
@@ -288,6 +427,9 @@ export function ProyectoDetallePagina(): React.JSX.Element {
     return cmdPrincipal ? estadosComandos[cmdPrincipal.id]?.estado === 'listo' : false
   }).length
 
+  const todosSeleccionados =
+    servicios.length > 0 && serviciosSeleccionadosIds.length === servicios.length
+
   return (
     <div className="space-y-6">
       {/* Cabecera de proyecto y barra de control de grupo */}
@@ -307,28 +449,40 @@ export function ProyectoDetallePagina(): React.JSX.Element {
             {proyecto.nombre}
           </h1>
           <p className="text-sm text-txt-secondary leading-relaxed">
-            Haz clic en cualquier servicio para abrir sus comandos y consola, o arrastra desde el
-            mango <span className="font-mono text-txt">⠿</span> / usa el selector de orden para
-            ajustar la secuencia de arranque del grupo.
+            Haz clic en cualquier servicio para abrir sus comandos y consola, o arrastra desde{' '}
+            <span className="font-mono text-txt">⠿</span> para reordenar el arranque.
           </p>
         </div>
 
         {servicios.length > 0 && (
-          <div className="bg-surface border border-border p-3 flex flex-wrap items-center gap-3 self-start lg:self-auto">
+          <div className="bg-surface border border-border p-3 flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
+            <button
+              type="button"
+              onClick={alternarSeleccionTodos}
+              className="bg-elevated border border-border hover:border-txt-secondary text-txt-secondary hover:text-txt px-2.5 py-1.5 text-xs font-mono transition-colors duration-150 cursor-pointer"
+            >
+              {todosSeleccionados ? 'Deseleccionar todos' : 'Seleccionar todos'} (
+              {serviciosSeleccionadosIds.length}/{servicios.length})
+            </button>
+
             <div className="font-mono text-xs px-1">
-              <span className="text-txt-secondary">Grupo: </span>
+              <span className="text-txt-secondary">Listos: </span>
               <span className="text-txt font-medium">
-                {serviciosListosCount}/{servicios.length} listos
+                {serviciosListosCount}/{servicios.length}
               </span>
             </div>
 
             <button
               type="button"
-              disabled={grupoEnCurso}
-              onClick={() => iniciarGrupoProyecto(proyecto.id)}
+              disabled={grupoEnCurso || serviciosSeleccionadosIds.length === 0}
+              onClick={() => iniciarGrupoProyecto(proyecto.id, serviciosSeleccionadosIds)}
               className="bg-elevated border border-accent text-txt hover:bg-accent/15 disabled:opacity-40 px-3.5 py-1.5 text-xs font-medium transition-colors duration-150 cursor-pointer"
             >
-              {grupoEnCurso ? 'Iniciando secuencia...' : 'Iniciar grupo en orden'}
+              {grupoEnCurso
+                ? 'Iniciando secuencia...'
+                : serviciosSeleccionadosIds.length === servicios.length
+                  ? 'Iniciar grupo en orden'
+                  : `Iniciar seleccionados (${serviciosSeleccionadosIds.length})`}
             </button>
 
             {(serviciosActivosCount > 0 || grupoEnCurso) && (
@@ -379,7 +533,7 @@ export function ProyectoDetallePagina(): React.JSX.Element {
           <div className="flex items-center gap-3 text-sm text-txt">
             <span aria-hidden="true" className="inline-block w-2 h-2 bg-red shrink-0" />
             <div>
-              <span className="font-medium text-red">Secuencia interrumpida: </span>
+              <span className="font-medium text-red">Atención: </span>
               <span className="text-txt-secondary">{errorProyectos}</span>
             </div>
           </div>
@@ -423,12 +577,19 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                 const comandos = servicio.comandos ?? []
                 const comandoPrincipal =
                   comandos.find((cmd) => cmd.esPrincipal) ?? comandos[0] ?? null
-                const estadoPrincipal: EstadoEjecucion = comandoPrincipal
-                  ? (estadosComandos[comandoPrincipal.id]?.estado ?? 'detenido')
-                  : 'detenido'
-                const pidPrincipal = comandoPrincipal
-                  ? (estadosComandos[comandoPrincipal.id]?.pid ?? null)
-                  : null
+                const infoEjecucionPrincipal = comandoPrincipal
+                  ? estadosComandos[comandoPrincipal.id]
+                  : undefined
+                const estadoPrincipal: EstadoEjecucion =
+                  infoEjecucionPrincipal?.estado ?? 'detenido'
+                const pidPrincipal = infoEjecucionPrincipal?.pid ?? null
+                const errorUltimoServicio =
+                  infoEjecucionPrincipal?.ultimoError ??
+                  comandos
+                    .map((c) => estadosComandos[c.id]?.ultimoError)
+                    .find((msg) => Boolean(msg)) ??
+                  null
+
                 const comandosCorriendo = comandos.filter((cmd) => {
                   const est = estadosComandos[cmd.id]?.estado
                   return est === 'listo' || est === 'iniciando'
@@ -442,6 +603,7 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                 const editandoEste = editandoServicioId === servicio.id
                 const esArrastrado = arrastrandoId === servicio.id
                 const esDestino = sobreDestinoId === servicio.id && arrastrandoId !== servicio.id
+                const seleccionadoParaGrupo = serviciosSeleccionadosIds.includes(servicio.id)
 
                 return (
                   <article
@@ -475,7 +637,7 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                     onClick={() => navegar(`/proyectos/${proyecto.id}/servicios/${servicio.id}`)}
                     className={`bg-surface border border-l-[3px] ${
                       esDestino
-                        ? 'border-accent border-l-accent bg-elevated/50'
+                        ? 'border-accent border-l-accent bg-elevated/60 border-t-2 border-t-accent'
                         : estadoPrincipal === 'listo'
                           ? 'border-border border-l-green hover:border-txt-muted'
                           : estadoPrincipal === 'iniciando'
@@ -483,11 +645,25 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                             : estadoPrincipal === 'error'
                               ? 'border-border border-l-red hover:border-txt-muted'
                               : 'border-border border-l-border hover:border-l-accent hover:border-txt-muted'
-                    } ${esArrastrado ? 'opacity-50' : ''} p-4 transition-colors duration-150 space-y-3 cursor-pointer`}
+                    } ${esArrastrado ? 'opacity-45' : ''} p-4 transition-colors duration-150 space-y-3 cursor-pointer`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                       <div className="space-y-1.5 min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
+                          {/* Checkbox selección granular de grupo */}
+                          <label
+                            title="Incluir este servicio al iniciar el grupo"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center px-1.5 py-1 bg-elevated border border-border hover:border-accent cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={seleccionadoParaGrupo}
+                              onChange={() => alternarSeleccionServicio(servicio.id)}
+                              className="accent-accent cursor-pointer"
+                            />
+                          </label>
+
                           {/* Mango de arrastre + Dropdown directo de orden */}
                           <div
                             className="inline-flex items-center bg-elevated border border-border hover:border-accent transition-colors duration-150"
@@ -607,16 +783,89 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                       </div>
                     </div>
 
+                    {/* Alerta de error visible en la tarjeta del servicio */}
+                    {estadoPrincipal === 'error' && errorUltimoServicio && (
+                      <div className="bg-elevated border border-red/40 border-l-2 border-l-red px-3 py-2 text-xs font-mono text-red flex items-center justify-between gap-3">
+                        <span className="truncate" title={errorUltimoServicio}>
+                          Fallo al iniciar: {errorUltimoServicio}
+                        </span>
+                        <span className="text-txt-secondary shrink-0 underline">
+                          Ver consola →
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Formulario de edición completa del servicio */}
                     {editandoEste && (
                       <form
                         onClick={(e) => e.stopPropagation()}
                         onSubmit={(e) => manejarGuardarEdicion(e, servicio.id)}
-                        className="bg-elevated border border-border p-3.5 space-y-3 cursor-default"
+                        className="bg-elevated border border-border p-4 space-y-3.5 cursor-default"
                       >
-                        <div className="text-xs font-medium text-txt">
-                          Configurar orden de arranque y verificación de disponibilidad
+                        <div className="flex items-center justify-between border-b border-border pb-2">
+                          <span className="text-xs font-bold text-txt font-display">
+                            Editar configuración de {servicio.nombre}
+                          </span>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="block text-[11px] font-mono text-txt-secondary">
+                              Nombre del servicio
+                            </label>
+                            <input
+                              type="text"
+                              value={nombreEdicion}
+                              onChange={(e) => setNombreEdicion(e.target.value)}
+                              className="w-full bg-surface border border-border focus:border-accent focus:outline-none px-2.5 py-1.5 text-xs text-txt"
+                              required
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="block text-[11px] font-mono text-txt-secondary">
+                              Carpeta del servicio
+                            </label>
+                            <div className="flex gap-1.5">
+                              <input
+                                type="text"
+                                value={rutaEdicion}
+                                onChange={(e) => setRutaEdicion(e.target.value)}
+                                className="flex-1 min-w-0 bg-surface border border-border focus:border-accent focus:outline-none px-2.5 py-1.5 text-xs font-mono text-txt"
+                                required
+                              />
+                              <button
+                                type="button"
+                                onClick={manejarSeleccionarCarpetaEdicion}
+                                className="bg-surface border border-border hover:border-txt-secondary text-txt-secondary hover:text-txt px-2.5 py-1.5 text-xs transition-colors duration-150 cursor-pointer shrink-0"
+                              >
+                                Elegir...
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="block text-[11px] font-mono text-txt-secondary">
+                              Comando principal al iniciar
+                            </label>
+                            <select
+                              value={seleccionComandoEdicion}
+                              onChange={(e) => setSeleccionComandoEdicion(e.target.value)}
+                              className="w-full bg-surface border border-border focus:border-accent focus:outline-none px-2.5 py-1.5 text-xs font-mono text-txt cursor-pointer"
+                            >
+                              {comandos.map((cmd) => (
+                                <option key={cmd.id} value={String(cmd.id)}>
+                                  {cmd.etiqueta} ({cmd.comando})
+                                </option>
+                              ))}
+                              <option value={OPCION_COMANDO_MANUAL}>
+                                + Escribir comando manual...
+                              </option>
+                            </select>
+                          </div>
+
                           <div className="space-y-1">
                             <label className="block text-[11px] font-mono text-txt-secondary">
                               Posición de arranque
@@ -636,7 +885,40 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                               })}
                             </select>
                           </div>
+                        </div>
 
+                        {seleccionComandoEdicion === OPCION_COMANDO_MANUAL && (
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-surface border border-border p-3">
+                            <div className="space-y-1">
+                              <label className="block text-[11px] font-mono text-txt-secondary">
+                                Etiqueta del comando
+                              </label>
+                              <input
+                                type="text"
+                                value={etiquetaManualEdicion}
+                                onChange={(e) => setEtiquetaManualEdicion(e.target.value)}
+                                placeholder="Ej. start:local"
+                                className="w-full bg-elevated border border-border focus:border-accent focus:outline-none px-2.5 py-1.5 text-xs font-mono text-txt"
+                                required
+                              />
+                            </div>
+                            <div className="sm:col-span-2 space-y-1">
+                              <label className="block text-[11px] font-mono text-txt-secondary">
+                                Comando manual a ejecutar
+                              </label>
+                              <input
+                                type="text"
+                                value={comandoManualEdicion}
+                                onChange={(e) => setComandoManualEdicion(e.target.value)}
+                                placeholder="Ej. npm run dev -- --port 4000"
+                                className="w-full bg-elevated border border-border focus:border-accent focus:outline-none px-2.5 py-1.5 text-xs font-mono text-txt"
+                                required
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div className="space-y-1">
                             <label className="block text-[11px] font-mono text-txt-secondary">
                               Tipo de health check
@@ -676,18 +958,18 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                           </div>
                         </div>
 
-                        <div className="flex items-center justify-end gap-2">
+                        <div className="flex items-center justify-end gap-2 pt-1">
                           <button
                             type="button"
                             onClick={() => setEditandoServicioId(null)}
-                            className="bg-surface border border-border text-txt-secondary hover:text-txt px-3 py-1 text-xs transition-colors duration-150 cursor-pointer"
+                            className="bg-surface border border-border text-txt-secondary hover:text-txt px-3 py-1.5 text-xs transition-colors duration-150 cursor-pointer"
                           >
                             Cancelar
                           </button>
                           <button
                             type="submit"
                             disabled={guardandoEdicion}
-                            className="bg-surface border border-accent text-txt hover:bg-accent/15 px-3 py-1 text-xs font-medium transition-colors duration-150 cursor-pointer"
+                            className="bg-surface border border-accent text-txt hover:bg-accent/15 px-3.5 py-1.5 text-xs font-medium transition-colors duration-150 cursor-pointer"
                           >
                             {guardandoEdicion ? 'Guardando...' : 'Guardar cambios'}
                           </button>
@@ -707,7 +989,7 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                           </span>
                         ) : (
                           <span className="text-txt-muted">
-                            Sin comandos detectados — haz clic para agregar uno manual
+                            Sin comandos detectados — haz clic para configurar uno
                           </span>
                         )}
                       </div>
@@ -725,7 +1007,7 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                           }
                           className="text-xs text-txt-secondary hover:text-txt px-2 py-1 transition-colors duration-150 cursor-pointer"
                         >
-                          {editandoEste ? 'Cerrar ajustes' : 'Orden y health check'}
+                          {editandoEste ? 'Cerrar edición' : 'Editar servicio'}
                         </button>
 
                         {confirmando ? (
@@ -826,6 +1108,75 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                 />
               </div>
 
+              {/* Selector de comando principal (scripts detectados o manual) */}
+              {rutaServicio.trim() && (
+                <div className="space-y-3 bg-elevated/60 border border-border p-3">
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="select-script-detectado"
+                      className="block text-xs font-medium text-txt"
+                    >
+                      Comando principal ({comandosDetectadosPrevios.length} detectados en
+                      package.json)
+                    </label>
+                    <select
+                      id="select-script-detectado"
+                      value={seleccionComandoNuevo}
+                      onChange={(e) => setSeleccionComandoNuevo(e.target.value)}
+                      className="w-full bg-surface border border-border focus:border-accent focus:outline-none px-2.5 py-2 text-xs font-mono text-txt cursor-pointer"
+                    >
+                      {comandosDetectadosPrevios.map((cmd) => (
+                        <option key={cmd.etiqueta} value={cmd.etiqueta}>
+                          {cmd.etiqueta} → {cmd.comando}
+                        </option>
+                      ))}
+                      <option value={OPCION_COMANDO_MANUAL}>
+                        Escribir comando manual...
+                      </option>
+                    </select>
+                  </div>
+
+                  {seleccionComandoNuevo === OPCION_COMANDO_MANUAL && (
+                    <div className="space-y-2.5 pt-1 border-t border-border">
+                      <div className="space-y-1">
+                        <label
+                          htmlFor="input-etiqueta-manual-nuevo"
+                          className="block text-[11px] font-mono text-txt-secondary"
+                        >
+                          Etiqueta del comando
+                        </label>
+                        <input
+                          id="input-etiqueta-manual-nuevo"
+                          type="text"
+                          value={etiquetaManualNueva}
+                          onChange={(e) => setEtiquetaManualNueva(e.target.value)}
+                          placeholder="Ej. dev o start"
+                          className="w-full bg-surface border border-border focus:border-accent focus:outline-none px-2.5 py-1.5 text-xs font-mono text-txt"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label
+                          htmlFor="input-cmd-manual-nuevo"
+                          className="block text-[11px] font-mono text-txt-secondary"
+                        >
+                          Comando manual a ejecutar
+                        </label>
+                        <input
+                          id="input-cmd-manual-nuevo"
+                          type="text"
+                          value={comandoManualNuevo}
+                          onChange={(e) => setComandoManualNuevo(e.target.value)}
+                          placeholder="Ej. npm run dev o python app.py"
+                          className="w-full bg-surface border border-border focus:border-accent focus:outline-none px-2.5 py-1.5 text-xs font-mono text-txt"
+                          required
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <label
@@ -907,6 +1258,9 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                   onClick={() => {
                     setNombreServicio('')
                     setRutaServicio('')
+                    setComandosDetectadosPrevios([])
+                    setSeleccionComandoNuevo('')
+                    setComandoManualNuevo('')
                     setTipoHealthNuevo('none')
                     setObjetivoHealthNuevo('')
                     setOrdenNuevo(totalOpcionesNuevoOrden)
@@ -922,7 +1276,7 @@ export function ProyectoDetallePagina(): React.JSX.Element {
                 disabled={guardando || !nombreServicio.trim() || !rutaServicio.trim()}
                 className="w-full sm:w-auto flex-1 bg-elevated border border-accent text-txt hover:bg-accent/15 disabled:opacity-40 disabled:pointer-events-none px-4 py-2 text-xs font-medium transition-colors duration-150 cursor-pointer"
               >
-                {guardando ? 'Detectando comandos...' : 'Guardar servicio'}
+                {guardando ? 'Guardando servicio...' : 'Guardar servicio'}
               </button>
             </div>
           </form>

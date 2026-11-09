@@ -34,7 +34,10 @@ interface EstadoApp {
   cargarProyectos: () => Promise<void>
   crearProyecto: (datos: CrearProyectoDatos) => Promise<ProyectoDTO>
   eliminarProyecto: (id: number) => Promise<void>
-  iniciarGrupoProyecto: (proyectoId: number) => Promise<void>
+  iniciarGrupoProyecto: (
+    proyectoId: number,
+    servicioIdsSeleccionados?: number[]
+  ) => Promise<void>
   detenerGrupoProyecto: (proyectoId: number) => Promise<void>
 
   crearServicio: (datos: CrearServicioDatos) => Promise<ServicioDTO>
@@ -129,10 +132,16 @@ export const useAppStore = create<EstadoApp>((set) => ({
     }
   },
 
-  iniciarGrupoProyecto: async (proyectoId: number): Promise<void> => {
+  iniciarGrupoProyecto: async (
+    proyectoId: number,
+    servicioIdsSeleccionados?: number[]
+  ): Promise<void> => {
     set({ errorProyectos: null })
     try {
-      const resultado = await window.api.proyectos.iniciarGrupo(proyectoId)
+      const resultado = await window.api.proyectos.iniciarGrupo(
+        proyectoId,
+        servicioIdsSeleccionados
+      )
       set((estado) => ({
         estadosGrupos: {
           ...estado.estadosGrupos,

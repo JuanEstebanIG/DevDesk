@@ -8,6 +8,7 @@ import { extraerHostYPuertoTcp } from './verificadorSalud.servicio'
 import type {
   ActualizarServicioDatos,
   ComandoDTO,
+  ComandoDetectadoPrevioDTO,
   CrearComandoPersonalizadoDatos,
   CrearServicioDatos,
   EstadoArranqueGrupoDTO,
@@ -46,6 +47,20 @@ function validarConfiguracionHealthCheck(
     tipoNormalizado: tipoFinal,
     objetivoNormalizado: objetivoLimpio
   }
+}
+
+export function previsualizarComandosEnCarpeta(rutaCarpeta: string): ComandoDetectadoPrevioDTO[] {
+  const rutaLimpia = rutaCarpeta?.trim() ?? ''
+  if (!rutaLimpia || !fs.existsSync(rutaLimpia)) {
+    return []
+  }
+
+  const detectados = detectarComandosEnCarpeta(rutaLimpia)
+  return detectados.map((cmd) => ({
+    etiqueta: cmd.etiqueta,
+    comando: cmd.comando,
+    esPrincipalSugerido: cmd.esPrincipal
+  }))
 }
 
 export async function listarServiciosPorProyecto(proyectoId: number): Promise<ServicioDTO[]> {
@@ -93,7 +108,34 @@ export async function crearServicio(datos: CrearServicioDatos): Promise<Servicio
     datos.objetivoHealthCheck
   )
 
-  const comandosIniciales = detectarComandosEnCarpeta(pathLimpio)
+  let comandosIniciales = detectarComandosEnCarpeta(pathLimpio)
+
+  const manualEtiqueta = datos.comandoManualPrincipal?.etiqueta?.trim() ?? ''
+  const manualComando = datos.comandoManualPrincipal?.comando?.trim() ?? ''
+
+  if (manualComando) {
+    comandosIniciales = comandosIniciales.map((cmd) => ({
+      ...cmd,
+      esPrincipal: false
+    }))
+    comandosIniciales.unshift({
+      etiqueta: manualEtiqueta || 'principal',
+      comando: manualComando,
+      origen: 'personalizado',
+      esPrincipal: true
+    })
+  } else if (datos.etiquetaPrincipalSeleccionada) {
+    const existeEtiqueta = comandosIniciales.some(
+      (cmd) => cmd.etiqueta === datos.etiquetaPrincipalSeleccionada
+    )
+    if (existeEtiqueta) {
+      comandosIniciales = comandosIniciales.map((cmd) => ({
+        ...cmd,
+        esPrincipal: cmd.etiqueta === datos.etiquetaPrincipalSeleccionada
+      }))
+    }
+  }
+
   const ordenArranque =
     datos.ordenArranque && datos.ordenArranque > 0
       ? Math.floor(datos.ordenArranque)
@@ -160,7 +202,33 @@ export async function actualizarServicio(
     datosLimpios.ordenArranque = ordenNum
   }
 
-  return await serviciosRepositorio.actualizarServicio(id, datosLimpios)
+  await serviciosRepositorio.actualizarServicio(id, datosLimpios)
+
+  const manualEtiqueta = datos.comandoManualPrincipal?.etiqueta?.trim() ?? ''
+  const manualComando = datos.comandoManualPrincipal?.comando?.trim() ?? ''
+
+  if (manualComando) {
+    await comandosRepositorio.crearComando({
+      servicioId: id,
+      etiqueta: manualEtiqueta || 'principal',
+      comando: manualComando,
+      origen: 'personalizado',
+      esPrincipal: true
+    })
+  } else if (datos.comandoPrincipalId !== undefined) {
+    const pertenece = (servicioActual.comandos ?? []).some(
+      (c) => c.id === datos.comandoPrincipalId
+    )
+    if (pertenece) {
+      await comandosRepositorio.establecerComandoPrincipal(id, datos.comandoPrincipalId)
+    }
+  }
+
+  const final = await serviciosRepositorio.obtenerServicioPorId(id)
+  if (!final) {
+    throw new Error('No fue posible recuperar el servicio actualizado.')
+  }
+  return final
 }
 
 export async function eliminarServicio(id: number): Promise<void> {
@@ -226,11 +294,21 @@ export async function reiniciarServicioPrincipal(
 }
 
 export async function iniciarGrupoProyecto(
-  proyectoId: number
+  proyectoId: number,
+  servicioIdsSeleccionados?: number[]
 ): Promise<EstadoArranqueGrupoDTO> {
-  const servicios = await serviciosRepositorio.listarServiciosPorProyecto(proyectoId)
-  if (servicios.length === 0) {
+  const todosLosServicios = await serviciosRepositorio.listarServiciosPorProyecto(proyectoId)
+  if (todosLosServicios.length === 0) {
     throw new Error('Este proyecto no tiene servicios registrados para iniciar.')
+  }
+
+  const servicios =
+    servicioIdsSeleccionados !== undefined
+      ? todosLosServicios.filter((s) => servicioIdsSeleccionados.includes(s.id))
+      : todosLosServicios
+
+  if (servicios.length === 0) {
+    throw new Error('Selecciona al menos un servicio para iniciar el arranque del grupo.')
   }
 
   gruposCancelados.set(proyectoId, false)
@@ -279,7 +357,23 @@ export async function iniciarGrupoProyecto(
       return estadoFalloSinCmd
     }
 
-    const resultado = await gestorProcesos.iniciarProceso(comandoPrincipal.id)
+    let resultado: EstadoEjecucionComandoDTO
+    try {
+      resultado = await gestorProcesos.iniciarProceso(comandoPrincipal.id)
+    } catch (error) {
+      const detalle = error instanceof Error ? error.message : 'Error al iniciar proceso.'
+      const estadoExcepcion: EstadoArranqueGrupoDTO = {
+        proyectoId,
+        enCurso: false,
+        servicioActualId: servicio.id,
+        servicioActualNombre: servicio.nombre,
+        pasoActual: indice + 1,
+        totalPasos: servicios.length,
+        errorMensaje: `El arranque del grupo se detuvo en "${servicio.nombre}": ${detalle}`
+      }
+      gestorProcesos.emitirEstadoGrupo(estadoExcepcion)
+      return estadoExcepcion
+    }
 
     if (gruposCancelados.get(proyectoId)) {
       const estadoCancelado: EstadoArranqueGrupoDTO = {
@@ -303,7 +397,9 @@ export async function iniciarGrupoProyecto(
         servicioActualNombre: servicio.nombre,
         pasoActual: indice + 1,
         totalPasos: servicios.length,
-        errorMensaje: `El arranque del grupo se detuvo en "${servicio.nombre}" (paso ${indice + 1} de ${servicios.length}) porque el servicio falló o no superó su health check. Los servicios anteriores permanecen activos.`
+        errorMensaje: `El arranque del grupo se detuvo en "${servicio.nombre}" (paso ${indice + 1} de ${servicios.length})${
+          resultado.ultimoError ? `: ${resultado.ultimoError}` : ' porque el servicio falló o no superó su health check.'
+        } Los servicios anteriores permanecen activos.`
       }
       gestorProcesos.emitirEstadoGrupo(estadoFallo)
       return estadoFallo

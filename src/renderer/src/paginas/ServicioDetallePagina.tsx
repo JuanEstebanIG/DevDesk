@@ -315,6 +315,7 @@ export function ServicioDetallePagina(): React.JSX.Element {
                   const estadoCmd: EstadoEjecucion =
                     estadosComandos[cmd.id]?.estado ?? 'detenido'
                   const pidCmd = estadosComandos[cmd.id]?.pid ?? null
+                  const ultimoErrorCmd = estadosComandos[cmd.id]?.ultimoError ?? null
                   const info = obtenerEtiquetaEstado(estadoCmd)
                   const estaCorriendo = estadoCmd === 'listo' || estadoCmd === 'iniciando'
                   const seleccionado = comandoSeleccionadoId === cmd.id
@@ -372,6 +373,12 @@ export function ServicioDetallePagina(): React.JSX.Element {
                           {pidCmd && <div className="text-txt-muted">PID {pidCmd}</div>}
                         </div>
                       </div>
+
+                      {estadoCmd === 'error' && ultimoErrorCmd && (
+                        <div className="bg-surface border border-red/40 border-l-2 border-l-red px-2.5 py-1.5 text-[11px] font-mono text-red break-words">
+                          {ultimoErrorCmd}
+                        </div>
+                      )}
 
                       <div
                         className="flex items-center justify-between gap-2 pt-2 border-t border-border/70"
