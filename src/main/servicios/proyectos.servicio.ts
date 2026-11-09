@@ -107,7 +107,8 @@ export function abrirCarpetaEnVsCode(rutaCarpeta: string): Promise<void> {
   }
 
   return new Promise((resolve, reject) => {
-    const proceso = spawn('code', [rutaLimpia], {
+    const proceso = spawn('code', ['.'], {
+      cwd: rutaLimpia,
       shell: true,
       windowsHide: true,
       detached: true,
