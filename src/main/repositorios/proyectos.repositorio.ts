@@ -1,6 +1,6 @@
 import type { Proyecto, Servicio, Comando } from '@prisma/client'
 import { obtenerClientePrisma } from './clientePrisma'
-import type { CrearProyectoDatos } from '../../compartido/tipos'
+import type { ActualizarProyectoDatos, CrearProyectoDatos } from '../../compartido/tipos'
 
 export type ProyectoConRelaciones = Proyecto & {
   servicios: (Servicio & {
@@ -13,11 +13,40 @@ export async function crearProyecto(datos: CrearProyectoDatos): Promise<Proyecto
   return await prisma.proyecto.create({
     data: {
       nombre: datos.nombre,
-      path: datos.path
+      path: datos.path,
+      abrirVsCodeAlIniciar: Boolean(datos.abrirVsCodeAlIniciar),
+      abrirNavegadorAlIniciar: Boolean(datos.abrirNavegadorAlIniciar),
+      urlAperturaAuto: datos.urlAperturaAuto ?? null
     },
     include: {
       servicios: {
         orderBy: { ordenArranque: 'asc' },
+        include: { comandos: true }
+      }
+    }
+  })
+}
+
+export async function actualizarProyecto(
+  id: number,
+  datos: ActualizarProyectoDatos
+): Promise<ProyectoConRelaciones> {
+  const prisma = obtenerClientePrisma()
+  return await prisma.proyecto.update({
+    where: { id },
+    data: {
+      ...(datos.nombre !== undefined ? { nombre: datos.nombre } : {}),
+      ...(datos.abrirVsCodeAlIniciar !== undefined
+        ? { abrirVsCodeAlIniciar: datos.abrirVsCodeAlIniciar }
+        : {}),
+      ...(datos.abrirNavegadorAlIniciar !== undefined
+        ? { abrirNavegadorAlIniciar: datos.abrirNavegadorAlIniciar }
+        : {}),
+      ...(datos.urlAperturaAuto !== undefined ? { urlAperturaAuto: datos.urlAperturaAuto } : {})
+    },
+    include: {
+      servicios: {
+        orderBy: [{ ordenArranque: 'asc' }, { id: 'asc' }],
         include: { comandos: true }
       }
     }

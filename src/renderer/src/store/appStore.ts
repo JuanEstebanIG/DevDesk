@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type {
+  ActualizarProyectoDatos,
   ActualizarServicioDatos,
   ComandoDTO,
   CrearComandoPersonalizadoDatos,
@@ -33,12 +34,15 @@ interface EstadoApp {
 
   cargarProyectos: () => Promise<void>
   crearProyecto: (datos: CrearProyectoDatos) => Promise<ProyectoDTO>
+  actualizarProyecto: (id: number, datos: ActualizarProyectoDatos) => Promise<ProyectoDTO>
   eliminarProyecto: (id: number) => Promise<void>
   iniciarGrupoProyecto: (
     proyectoId: number,
     servicioIdsSeleccionados?: number[]
   ) => Promise<void>
   detenerGrupoProyecto: (proyectoId: number) => Promise<void>
+  abrirVsCode: (rutaCarpeta: string) => Promise<void>
+  abrirUrlExterna: (url: string) => Promise<void>
 
   crearServicio: (datos: CrearServicioDatos) => Promise<ServicioDTO>
   actualizarServicio: (
@@ -118,6 +122,26 @@ export const useAppStore = create<EstadoApp>((set) => ({
     }
   },
 
+  actualizarProyecto: async (
+    id: number,
+    datos: ActualizarProyectoDatos
+  ): Promise<ProyectoDTO> => {
+    set({ errorProyectos: null })
+    try {
+      const actualizado = await window.api.proyectos.actualizar(id, datos)
+      set((estado) => ({
+        proyectos: estado.proyectos.map((proyecto) =>
+          proyecto.id === id ? { ...actualizado, servicios: proyecto.servicios ?? actualizado.servicios } : proyecto
+        )
+      }))
+      return actualizado
+    } catch (error) {
+      const mensaje = extraerMensajeError(error)
+      set({ errorProyectos: mensaje })
+      throw new Error(mensaje)
+    }
+  },
+
   eliminarProyecto: async (id: number): Promise<void> => {
     set({ errorProyectos: null })
     try {
@@ -160,6 +184,28 @@ export const useAppStore = create<EstadoApp>((set) => ({
     set({ errorProyectos: null })
     try {
       await window.api.proyectos.detenerGrupo(proyectoId)
+    } catch (error) {
+      const mensaje = extraerMensajeError(error)
+      set({ errorProyectos: mensaje })
+      throw new Error(mensaje)
+    }
+  },
+
+  abrirVsCode: async (rutaCarpeta: string): Promise<void> => {
+    set({ errorProyectos: null })
+    try {
+      await window.api.proyectos.abrirVsCode(rutaCarpeta)
+    } catch (error) {
+      const mensaje = extraerMensajeError(error)
+      set({ errorProyectos: mensaje })
+      throw new Error(mensaje)
+    }
+  },
+
+  abrirUrlExterna: async (url: string): Promise<void> => {
+    set({ errorProyectos: null })
+    try {
+      await window.api.proyectos.abrirUrlExterna(url)
     } catch (error) {
       const mensaje = extraerMensajeError(error)
       set({ errorProyectos: mensaje })
