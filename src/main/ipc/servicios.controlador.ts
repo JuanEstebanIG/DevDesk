@@ -11,6 +11,10 @@ export function registrarControladorServicios(): void {
     return await serviciosServicio.obtenerServicioPorId(id)
   })
 
+  ipcMain.handle('servicio:detectarComandos', (_event, rutaCarpeta: string) => {
+    return serviciosServicio.previsualizarComandosEnCarpeta(rutaCarpeta)
+  })
+
   ipcMain.handle('servicio:crear', async (_event, datos: CrearServicioDatos) => {
     return await serviciosServicio.crearServicio(datos)
   })

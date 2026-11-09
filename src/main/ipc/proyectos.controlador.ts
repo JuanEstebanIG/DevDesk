@@ -20,9 +20,12 @@ export function registrarControladorProyectos(): void {
     await proyectosServicio.eliminarProyecto(id)
   })
 
-  ipcMain.handle('proyecto:iniciarGrupo', async (_event, proyectoId: number) => {
-    return await serviciosServicio.iniciarGrupoProyecto(proyectoId)
-  })
+  ipcMain.handle(
+    'proyecto:iniciarGrupo',
+    async (_event, proyectoId: number, servicioIdsSeleccionados?: number[]) => {
+      return await serviciosServicio.iniciarGrupoProyecto(proyectoId, servicioIdsSeleccionados)
+    }
+  )
 
   ipcMain.handle('proyecto:detenerGrupo', async (_event, proyectoId: number) => {
     await serviciosServicio.detenerGrupoProyecto(proyectoId)

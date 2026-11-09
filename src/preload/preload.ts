@@ -3,6 +3,7 @@ import type {
   ActualizarServicioDatos,
   ApiElectron,
   ComandoDTO,
+  ComandoDetectadoPrevioDTO,
   CrearComandoPersonalizadoDatos,
   CrearProyectoDatos,
   CrearServicioDatos,
@@ -21,8 +22,11 @@ const api: ApiElectron = {
     crear: (datos: CrearProyectoDatos): Promise<ProyectoDTO> =>
       ipcRenderer.invoke('proyecto:crear', datos),
     eliminar: (id: number): Promise<void> => ipcRenderer.invoke('proyecto:eliminar', id),
-    iniciarGrupo: (proyectoId: number): Promise<EstadoArranqueGrupoDTO> =>
-      ipcRenderer.invoke('proyecto:iniciarGrupo', proyectoId),
+    iniciarGrupo: (
+      proyectoId: number,
+      servicioIdsSeleccionados?: number[]
+    ): Promise<EstadoArranqueGrupoDTO> =>
+      ipcRenderer.invoke('proyecto:iniciarGrupo', proyectoId, servicioIdsSeleccionados),
     detenerGrupo: (proyectoId: number): Promise<void> =>
       ipcRenderer.invoke('proyecto:detenerGrupo', proyectoId),
     onEstadoGrupo: (callback: (estado: EstadoArranqueGrupoDTO) => void): (() => void) => {
@@ -43,6 +47,8 @@ const api: ApiElectron = {
       ipcRenderer.invoke('servicio:listarPorProyecto', proyectoId),
     obtener: (id: number): Promise<ServicioDTO | null> =>
       ipcRenderer.invoke('servicio:obtener', id),
+    detectarComandosEnCarpeta: (rutaCarpeta: string): Promise<ComandoDetectadoPrevioDTO[]> =>
+      ipcRenderer.invoke('servicio:detectarComandos', rutaCarpeta),
     crear: (datos: CrearServicioDatos): Promise<ServicioDTO> =>
       ipcRenderer.invoke('servicio:crear', datos),
     actualizar: (id: number, datos: ActualizarServicioDatos): Promise<ServicioDTO> =>

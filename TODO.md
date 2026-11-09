@@ -56,13 +56,13 @@ Cada fase depende de que la anterior esté funcional. No saltar de fase sin comp
 
 **Check de fin de fase**: un proyecto con 2-3 servicios reales (ej. frontend + backend + base de datos) se puede iniciar como grupo, respetando el orden, y cada uno reporta correctamente cuándo está realmente listo.
 
-## Fase 4 — Detección de comandos refinada y UI de grupo (días 10-12)
+## Fase 4 — Detección de comandos refinada y UI de grupo (días 10-12) (completada)
 
-- [ ] Mejorar la UI de creación/edición de servicio: mostrar los scripts detectados como opciones claras (dropdown), con opción de escribir un comando manual si no aplica
-- [ ] Permitir editar un servicio ya creado (cambiar comando, orden, tipo de health check)
-- [ ] Vista de proyecto: reordenar visualmente el orden de arranque de los servicios (drag and drop nativo fluido con mango ⠿ e indicadores visuales)
-- [ ] Selección granular de servicios para el arranque del grupo (checkboxes por servicio, atajo seleccionar/deseleccionar todos, y ejecución filtrada)
-- [ ] Manejo de errores visible en la UI: si un comando falla al iniciar (ej. carpeta inválida, comando no encontrado), mostrar el error de forma clara, no solo en consola
+- [x] Mejorar la UI de creación/edición de servicio: mostrar los scripts detectados como opciones claras (dropdown), con opción de escribir un comando manual si no aplica
+- [x] Permitir editar un servicio ya creado (cambiar comando, orden, tipo de health check)
+- [x] Vista de proyecto: reordenar visualmente el orden de arranque de los servicios (drag and drop nativo fluido con mango ⠿ e indicadores visuales)
+- [x] Selección granular de servicios para el arranque del grupo (checkboxes por servicio, atajo seleccionar/deseleccionar todos, y ejecución filtrada)
+- [x] Manejo de errores visible en la UI: si un comando falla al iniciar (ej. carpeta inválida, comando no encontrado), mostrar el error de forma clara, no solo en consola
 
 **Check de fin de fase**: el flujo completo de crear/editar servicios y reordenar el grupo se siente sólido, sin necesitar reiniciar la app para ver cambios reflejados.
 
