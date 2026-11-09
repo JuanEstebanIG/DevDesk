@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type {
+  ActualizarProyectoDatos,
   ActualizarServicioDatos,
   ApiElectron,
   ComandoDTO,
@@ -21,6 +22,8 @@ const api: ApiElectron = {
       ipcRenderer.invoke('proyecto:obtener', id),
     crear: (datos: CrearProyectoDatos): Promise<ProyectoDTO> =>
       ipcRenderer.invoke('proyecto:crear', datos),
+    actualizar: (id: number, datos: ActualizarProyectoDatos): Promise<ProyectoDTO> =>
+      ipcRenderer.invoke('proyecto:actualizar', id, datos),
     eliminar: (id: number): Promise<void> => ipcRenderer.invoke('proyecto:eliminar', id),
     iniciarGrupo: (
       proyectoId: number,
@@ -29,6 +32,10 @@ const api: ApiElectron = {
       ipcRenderer.invoke('proyecto:iniciarGrupo', proyectoId, servicioIdsSeleccionados),
     detenerGrupo: (proyectoId: number): Promise<void> =>
       ipcRenderer.invoke('proyecto:detenerGrupo', proyectoId),
+    abrirVsCode: (rutaCarpeta: string): Promise<void> =>
+      ipcRenderer.invoke('proyecto:abrirVsCode', rutaCarpeta),
+    abrirUrlExterna: (url: string): Promise<void> =>
+      ipcRenderer.invoke('proyecto:abrirUrlExterna', url),
     onEstadoGrupo: (callback: (estado: EstadoArranqueGrupoDTO) => void): (() => void) => {
       const manejador = (
         _event: Electron.IpcRendererEvent,
@@ -117,6 +124,5 @@ if (process.contextIsolated) {
     console.error(error)
   }
 } else {
-  // @ts-ignore (define in dts)
   window.api = api
 }

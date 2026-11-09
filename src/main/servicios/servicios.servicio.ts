@@ -4,7 +4,8 @@ import * as serviciosRepositorio from '../repositorios/servicios.repositorio'
 import * as comandosRepositorio from '../repositorios/comandos.repositorio'
 import { detectarComandosEnCarpeta } from './detectorComandos.servicio'
 import { gestorProcesos } from './gestorProcesos.servicio'
-import { extraerHostYPuertoTcp } from './verificadorSalud.servicio'
+import { extraerHostYPuertoTcp, normalizarUrlHttp } from './verificadorSalud.servicio'
+import { abrirCarpetaEnVsCode, abrirUrlEnNavegador } from './proyectos.servicio'
 import type {
   ActualizarServicioDatos,
   ComandoDTO,
@@ -416,6 +417,37 @@ export async function iniciarGrupoProyecto(
     errorMensaje: null
   }
   gestorProcesos.emitirEstadoGrupo(estadoCompletado)
+
+  try {
+    const proyecto = await proyectosRepositorio.obtenerProyectoPorId(proyectoId)
+    if (proyecto) {
+      if (proyecto.abrirVsCodeAlIniciar) {
+        await abrirCarpetaEnVsCode(proyecto.path).catch(() => {
+          // Ignorar fallo no crítico al lanzar VS Code
+        })
+      }
+
+      if (proyecto.abrirNavegadorAlIniciar) {
+        const servicioHttp = servicios.find(
+          (s) => s.tipoHealthCheck === 'http' && Boolean(s.objetivoHealthCheck?.trim())
+        )
+        const urlObjetivo =
+          proyecto.urlAperturaAuto?.trim() ||
+          (servicioHttp?.objetivoHealthCheck
+            ? normalizarUrlHttp(servicioHttp.objetivoHealthCheck)
+            : '')
+
+        if (urlObjetivo) {
+          await abrirUrlEnNavegador(urlObjetivo).catch(() => {
+            // Ignorar fallo no crítico al abrir navegador
+          })
+        }
+      }
+    }
+  } catch {
+    // Las automatizaciones post-arranque no deben alterar el resultado del grupo
+  }
+
   return estadoCompletado
 }
 

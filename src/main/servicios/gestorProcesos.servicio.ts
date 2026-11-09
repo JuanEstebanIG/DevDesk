@@ -66,10 +66,19 @@ class GestorDeProcesos {
         marcaTiempo: new Date().toLocaleTimeString('es-ES', { hour12: false })
       }
 
-      if (flujo === 'stderr') {
-        const activa = this.ejecuciones.get(comandoId)
-        if (activa) {
-          activa.ultimoMensajeError = linea.trim()
+      const activa = this.ejecuciones.get(comandoId)
+      if (activa) {
+        const textoTrim = linea.trim()
+        if (/EADDRINUSE|address already in use/i.test(textoTrim)) {
+          activa.ultimoMensajeError = `El puerto requerido ya está ocupado por otro proceso (${textoTrim}).`
+        } else if (
+          /no se reconoce como un comando interno|is not recognized as an internal|command not found/i.test(
+            textoTrim
+          )
+        ) {
+          activa.ultimoMensajeError = `Comando o ejecutable no encontrado en el sistema (${textoTrim}).`
+        } else if (flujo === 'stderr') {
+          activa.ultimoMensajeError = textoTrim
         }
       }
 

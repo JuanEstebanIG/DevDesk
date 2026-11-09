@@ -68,12 +68,25 @@ export interface ProyectoDTO {
   nombre: string
   path: string
   fechaCreacion: string | Date
+  abrirVsCodeAlIniciar?: boolean
+  abrirNavegadorAlIniciar?: boolean
+  urlAperturaAuto?: string | null
   servicios?: ServicioDTO[]
 }
 
 export interface CrearProyectoDatos {
   nombre: string
   path: string
+  abrirVsCodeAlIniciar?: boolean
+  abrirNavegadorAlIniciar?: boolean
+  urlAperturaAuto?: string | null
+}
+
+export interface ActualizarProyectoDatos {
+  nombre?: string
+  abrirVsCodeAlIniciar?: boolean
+  abrirNavegadorAlIniciar?: boolean
+  urlAperturaAuto?: string | null
 }
 
 export interface CrearServicioDatos {
@@ -115,12 +128,15 @@ export interface ApiElectron {
     listar: () => Promise<ProyectoDTO[]>
     obtener: (id: number) => Promise<ProyectoDTO | null>
     crear: (datos: CrearProyectoDatos) => Promise<ProyectoDTO>
+    actualizar: (id: number, datos: ActualizarProyectoDatos) => Promise<ProyectoDTO>
     eliminar: (id: number) => Promise<void>
     iniciarGrupo: (
       proyectoId: number,
       servicioIdsSeleccionados?: number[]
     ) => Promise<EstadoArranqueGrupoDTO>
     detenerGrupo: (proyectoId: number) => Promise<void>
+    abrirVsCode: (rutaCarpeta: string) => Promise<void>
+    abrirUrlExterna: (url: string) => Promise<void>
     onEstadoGrupo: (callback: (estado: EstadoArranqueGrupoDTO) => void) => () => void
   }
   servicios: {

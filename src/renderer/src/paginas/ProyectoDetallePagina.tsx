@@ -76,6 +76,9 @@ export function ProyectoDetallePagina(): React.JSX.Element {
     reiniciarServicio,
     iniciarGrupoProyecto,
     detenerGrupoProyecto,
+    actualizarProyecto,
+    abrirVsCode,
+    abrirUrlExterna,
     limpiarError
   } = useAppStore()
 
@@ -115,6 +118,10 @@ export function ProyectoDetallePagina(): React.JSX.Element {
   const [arrastrandoId, setArrastrandoId] = useState<number | null>(null)
   const [sobreDestinoId, setSobreDestinoId] = useState<number | null>(null)
 
+  // Automatizaciones post-arranque del proyecto
+  const [urlAutoInput, setUrlAutoInput] = useState('')
+  const [guardandoAuto, setGuardandoAuto] = useState(false)
+
   useEffect(() => {
     cargarProyectos()
   }, [cargarProyectos])
@@ -122,6 +129,12 @@ export function ProyectoDetallePagina(): React.JSX.Element {
   const proyecto = proyectos.find((p) => p.id === idNumerico)
   const servicios = proyecto?.servicios ?? []
   const totalOpcionesNuevoOrden = servicios.length + 1
+
+  useEffect(() => {
+    if (proyecto) {
+      setUrlAutoInput(proyecto.urlAperturaAuto ?? '')
+    }
+  }, [proyecto?.id, proyecto?.urlAperturaAuto])
 
   useEffect(() => {
     setOrdenNuevo(servicios.length + 1)
@@ -1046,8 +1059,8 @@ export function ProyectoDetallePagina(): React.JSX.Element {
           )}
         </section>
 
-        {/* Panel acoplado: Registrar nuevo servicio */}
-        <aside className="lg:col-span-4 lg:sticky lg:top-16">
+        {/* Panel acoplado: Registrar nuevo servicio + Automatizaciones */}
+        <aside className="lg:col-span-4 lg:sticky lg:top-16 space-y-5">
           <form
             onSubmit={manejarCrearServicio}
             className="bg-surface border border-border border-t-2 border-t-accent p-5 space-y-4"
@@ -1280,6 +1293,108 @@ export function ProyectoDetallePagina(): React.JSX.Element {
               </button>
             </div>
           </form>
+
+          {/* Configuración de apertura automática al finalizar el arranque del grupo */}
+          <div className="bg-surface border border-border p-5 space-y-4">
+            <div className="border-b border-border pb-3 flex items-center justify-between gap-2">
+              <div>
+                <h2 className="font-display text-sm font-bold text-txt tracking-tight">
+                  Al completar el arranque del grupo
+                </h2>
+                <p className="text-xs text-txt-secondary">
+                  Se ejecuta cuando todos los servicios seleccionados pasan a estado listo.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => abrirVsCode(proyecto.path)}
+                className="bg-elevated border border-border hover:border-accent text-txt px-2.5 py-1 text-[11px] font-mono transition-colors duration-150 cursor-pointer shrink-0"
+              >
+                Abrir VS Code
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <label className="flex items-center justify-between gap-3 text-xs text-txt cursor-pointer select-none">
+                <span>Abrir proyecto en VS Code (<code className="font-mono">code .</code>)</span>
+                <input
+                  type="checkbox"
+                  checked={Boolean(proyecto.abrirVsCodeAlIniciar)}
+                  onChange={(e) =>
+                    actualizarProyecto(proyecto.id, {
+                      abrirVsCodeAlIniciar: e.target.checked
+                    })
+                  }
+                  className="accent-accent cursor-pointer"
+                />
+              </label>
+
+              <label className="flex items-center justify-between gap-3 text-xs text-txt cursor-pointer select-none">
+                <span>Abrir navegador automáticamente</span>
+                <input
+                  type="checkbox"
+                  checked={Boolean(proyecto.abrirNavegadorAlIniciar)}
+                  onChange={(e) =>
+                    actualizarProyecto(proyecto.id, {
+                      abrirNavegadorAlIniciar: e.target.checked
+                    })
+                  }
+                  className="accent-accent cursor-pointer"
+                />
+              </label>
+
+              {proyecto.abrirNavegadorAlIniciar && (
+                <div className="space-y-2 pt-1 border-t border-border">
+                  <label
+                    htmlFor="input-url-apertura-auto"
+                    className="block text-[11px] font-mono text-txt-secondary"
+                  >
+                    URL a abrir (opcional; si se deja vacío usa el primer health check HTTP)
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      id="input-url-apertura-auto"
+                      type="text"
+                      value={urlAutoInput}
+                      onChange={(e) => setUrlAutoInput(e.target.value)}
+                      placeholder="Ej. http://localhost:5173"
+                      className="flex-1 min-w-0 bg-elevated border border-border focus:border-accent focus:outline-none px-2.5 py-1.5 text-xs font-mono text-txt placeholder:text-txt-muted"
+                    />
+                    <button
+                      type="button"
+                      disabled={guardandoAuto}
+                      onClick={async () => {
+                        setGuardandoAuto(true)
+                        try {
+                          await actualizarProyecto(proyecto.id, {
+                            urlAperturaAuto: urlAutoInput.trim() || null
+                          })
+                        } finally {
+                          setGuardandoAuto(false)
+                        }
+                      }}
+                      className="bg-elevated border border-accent text-txt hover:bg-accent/15 px-3 py-1.5 text-xs font-medium transition-colors duration-150 cursor-pointer shrink-0"
+                    >
+                      {guardandoAuto ? '...' : 'Guardar URL'}
+                    </button>
+                  </div>
+                  {proyecto.urlAperturaAuto && (
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          proyecto.urlAperturaAuto && abrirUrlExterna(proyecto.urlAperturaAuto)
+                        }
+                        className="text-[11px] font-mono text-accent hover:underline cursor-pointer"
+                      >
+                        Probar URL en navegador ({proyecto.urlAperturaAuto}) →
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
         </aside>
       </div>
     </div>

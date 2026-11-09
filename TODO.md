@@ -66,14 +66,14 @@ Cada fase depende de que la anterior esté funcional. No saltar de fase sin comp
 
 **Check de fin de fase**: el flujo completo de crear/editar servicios y reordenar el grupo se siente sólido, sin necesitar reiniciar la app para ver cambios reflejados.
 
-## Fase 5 — Pulido y automatizaciones finales (días 13-14)
+## Fase 5 — Pulido y automatizaciones finales (días 13-14) (completada)
 
-- [ ] Al completar el arranque de un grupo (todos los servicios en estado `listo`), permitir abrir automáticamente: VS Code (`code <path>`), el navegador, o una URL específica configurada por servicio/proyecto
-- [ ] Persistencia de configuración de apertura automática (campo en el modelo `Proyecto` o `Servicio`)
-- [ ] Revisión general de manejo de errores (procesos que no existen, carpetas eliminadas, puertos ocupados)
-- [ ] Limpieza de código: revisar convenciones de nombres en español, tipado explícito, eliminar `any` residuales
-- [ ] Configuración básica de ESLint + Prettier aplicada a todo el proyecto
-- [ ] README del proyecto: qué es DevDesk, cómo correrlo en desarrollo, y una sección explícita de "roadmap futuro" (Docker, Git/GitHub, perfiles de ejecución, persistencia de logs) para dejar claro que quedaron fuera intencionalmente de esta versión
+- [x] Al completar el arranque de un grupo (todos los servicios en estado `listo`), permitir abrir automáticamente: VS Code (`code <path>`), el navegador, o una URL específica configurada por servicio/proyecto
+- [x] Persistencia de configuración de apertura automática (campo en el modelo `Proyecto` o `Servicio`)
+- [x] Revisión general de manejo de errores (procesos que no existen, carpetas eliminadas, puertos ocupados)
+- [x] Limpieza de código: revisar convenciones de nombres en español, tipado explícito, eliminar `any` residuales
+- [x] Configuración básica de ESLint + Prettier aplicada a todo el proyecto
+- [x] README del proyecto: qué es DevDesk, cómo correrlo en desarrollo, y una sección explícita de "roadmap futuro" (Docker, Git/GitHub, perfiles de ejecución, persistencia de logs) para dejar claro que quedaron fuera intencionalmente de esta versión
 
 **Check de fin de fase**: DevDesk es usable de principio a fin con al menos un proyecto real (uno de los proyectos académicos existentes, ej. Axis o StudyGo) como caso de prueba.
 

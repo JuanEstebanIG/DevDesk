@@ -8,11 +8,14 @@ datasource db {
 }
 
 model Proyecto {
-  id            Int        @id @default(autoincrement())
-  nombre        String
-  path          String     @unique
-  fechaCreacion DateTime   @default(now())
-  servicios     Servicio[]
+  id                      Int        @id @default(autoincrement())
+  nombre                  String
+  path                    String     @unique
+  fechaCreacion           DateTime   @default(now())
+  abrirVsCodeAlIniciar    Boolean    @default(false)
+  abrirNavegadorAlIniciar Boolean    @default(false)
+  urlAperturaAuto         String?
+  servicios               Servicio[]
 }
 
 model Servicio {

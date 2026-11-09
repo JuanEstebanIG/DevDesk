@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import * as proyectosServicio from '../servicios/proyectos.servicio'
 import * as serviciosServicio from '../servicios/servicios.servicio'
-import type { CrearProyectoDatos } from '../../compartido/tipos'
+import type { ActualizarProyectoDatos, CrearProyectoDatos } from '../../compartido/tipos'
 
 export function registrarControladorProyectos(): void {
   ipcMain.handle('proyecto:listar', async () => {
@@ -16,6 +16,13 @@ export function registrarControladorProyectos(): void {
     return await proyectosServicio.crearProyecto(datos)
   })
 
+  ipcMain.handle(
+    'proyecto:actualizar',
+    async (_event, id: number, datos: ActualizarProyectoDatos) => {
+      return await proyectosServicio.actualizarProyecto(id, datos)
+    }
+  )
+
   ipcMain.handle('proyecto:eliminar', async (_event, id: number) => {
     await proyectosServicio.eliminarProyecto(id)
   })
@@ -29,5 +36,13 @@ export function registrarControladorProyectos(): void {
 
   ipcMain.handle('proyecto:detenerGrupo', async (_event, proyectoId: number) => {
     await serviciosServicio.detenerGrupoProyecto(proyectoId)
+  })
+
+  ipcMain.handle('proyecto:abrirVsCode', async (_event, rutaCarpeta: string) => {
+    await proyectosServicio.abrirCarpetaEnVsCode(rutaCarpeta)
+  })
+
+  ipcMain.handle('proyecto:abrirUrlExterna', async (_event, url: string) => {
+    await proyectosServicio.abrirUrlEnNavegador(url)
   })
 }
