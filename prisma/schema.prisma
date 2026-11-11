@@ -1,0 +1,41 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Proyecto {
+  id                      Int        @id @default(autoincrement())
+  nombre                  String
+  path                    String     @unique
+  fechaCreacion           DateTime   @default(now())
+  abrirVsCodeAlIniciar    Boolean    @default(false)
+  abrirNavegadorAlIniciar Boolean    @default(false)
+  urlAperturaAuto         String?
+  servicios               Servicio[]
+}
+
+model Servicio {
+  id                  Int       @id @default(autoincrement())
+  nombre              String
+  path                String
+  tipoHealthCheck     String    @default("none")
+  objetivoHealthCheck String?
+  ordenArranque       Int       @default(0)
+  proyectoId          Int
+  proyecto            Proyecto  @relation(fields: [proyectoId], references: [id], onDelete: Cascade)
+  comandos            Comando[]
+}
+
+model Comando {
+  id          Int      @id @default(autoincrement())
+  servicioId  Int
+  servicio    Servicio @relation(fields: [servicioId], references: [id], onDelete: Cascade)
+  etiqueta    String
+  comando     String
+  origen      String   @default("detectado")
+  esPrincipal Boolean  @default(false)
+}
